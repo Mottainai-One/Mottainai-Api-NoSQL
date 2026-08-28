@@ -1,0 +1,14 @@
+title = "gitleaks config for mongo-api"
+
+[extend]
+useDefault = true
+
+# application-example.yml documenta o formato de URI com credenciais de propósito
+# (mongodb://<usuario>:<senha>@...), sempre com placeholders entre "<>", nunca um
+# valor real. Sem isso, o padrão genérico de "URL com credenciais" do gitleaks
+# marcaria esse arquivo como segredo pra sempre.
+[[allowlists]]
+description = "Placeholder de credencial documentado, nunca um valor real"
+paths = [
+  '''src/main/resources/application-example\.yml''',
+]
