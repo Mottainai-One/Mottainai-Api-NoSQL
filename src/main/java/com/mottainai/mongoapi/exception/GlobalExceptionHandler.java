@@ -3,6 +3,7 @@ package com.mottainai.mongoapi.exception;
 import java.time.Instant;
 import java.util.stream.Collectors;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -45,6 +46,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateSlugException.class)
     public ResponseEntity<ApiErrorResponse> handleDuplicate(DuplicateSlugException ex, WebRequest request) {
         return build(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    /**
+     * Rede de segurança para a corrida check-then-insert do slug único: se duas requisições
+     * concorrentes passarem pelo findBySlug() antes de qualquer uma salvar, o índice único do
+     * Mongo rejeita a segunda com DuplicateKeyException em vez de DuplicateSlugException.
+     */
+    @ExceptionHandler(DuplicateKeyException.class)
+    public ResponseEntity<ApiErrorResponse> handleDuplicateKey(DuplicateKeyException ex, WebRequest request) {
+        return build(HttpStatus.CONFLICT, "Conflito: valor duplicado em um campo único.", request);
     }
 
     @ExceptionHandler(Exception.class)
