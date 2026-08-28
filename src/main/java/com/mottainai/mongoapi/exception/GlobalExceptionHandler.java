@@ -47,6 +47,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(DuplicateChunkException.class)
+    public ResponseEntity<ApiErrorResponse> handleDuplicateChunk(DuplicateChunkException ex, WebRequest request) {
+        return build(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception ex, WebRequest request) {
         log.error("Erro não tratado", ex);

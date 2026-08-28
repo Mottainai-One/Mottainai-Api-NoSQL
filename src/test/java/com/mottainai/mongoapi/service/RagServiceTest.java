@@ -28,6 +28,7 @@ import com.mottainai.mongoapi.dto.rag.RagChunkRequest;
 import com.mottainai.mongoapi.dto.rag.RagChunkResponse;
 import com.mottainai.mongoapi.dto.rag.RagDocumentRequest;
 import com.mottainai.mongoapi.dto.rag.RagDocumentResponse;
+import com.mottainai.mongoapi.exception.DuplicateChunkException;
 import com.mottainai.mongoapi.exception.DuplicateSlugException;
 import com.mottainai.mongoapi.exception.ResourceNotFoundException;
 import com.mottainai.mongoapi.mapper.RagMapper;
@@ -188,6 +189,52 @@ class RagServiceTest {
         RagChunk saved = captor.getValue();
         assertThat(saved.getChunk()).isEqualTo(10);
         assertThat(saved.getEmbedding()).isNull();
+    }
+
+    @Test
+    void createChunk_whenExplicitChunkNumberAlreadyExists_throwsDuplicateChunkException() {
+        RagDocument document = sampleDocument("doc-1", EMPRESA_ID, "slug-1");
+        RagChunkRequest request = new RagChunkRequest(2, "texto duplicado");
+
+        when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID)).thenReturn(Optional.of(document));
+        when(ragChunkRepository.existsByDocumentIdAndChunk("doc-1", 2)).thenReturn(true);
+
+        assertThatThrownBy(() -> ragService.createChunk("doc-1", EMPRESA_ID, request))
+                .isInstanceOf(DuplicateChunkException.class);
+
+        verify(ragChunkRepository, never()).save(any());
+    }
+
+    @Test
+    void updateChunk_whenChangingToAnExistingChunkNumber_throwsDuplicateChunkException() {
+        RagChunk chunk = RagChunk.builder().id("chunk-1").documentId("doc-1").chunk(0).text("velho").build();
+        RagChunkRequest request = new RagChunkRequest(3, "novo texto");
+
+        when(ragChunkRepository.findById("chunk-1")).thenReturn(Optional.of(chunk));
+        when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID))
+                .thenReturn(Optional.of(sampleDocument("doc-1", EMPRESA_ID, "slug-1")));
+        when(ragChunkRepository.existsByDocumentIdAndChunk("doc-1", 3)).thenReturn(true);
+
+        assertThatThrownBy(() -> ragService.updateChunk("chunk-1", EMPRESA_ID, request))
+                .isInstanceOf(DuplicateChunkException.class);
+
+        verify(ragChunkRepository, never()).save(any());
+    }
+
+    @Test
+    void updateChunk_whenChunkNumberUnchanged_doesNotCheckForDuplicates() {
+        RagChunk chunk = RagChunk.builder().id("chunk-1").documentId("doc-1").chunk(0).text("velho").build();
+        RagChunkRequest request = new RagChunkRequest(0, "texto atualizado");
+
+        when(ragChunkRepository.findById("chunk-1")).thenReturn(Optional.of(chunk));
+        when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID))
+                .thenReturn(Optional.of(sampleDocument("doc-1", EMPRESA_ID, "slug-1")));
+        when(ragChunkRepository.save(any(RagChunk.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RagChunkResponse response = ragService.updateChunk("chunk-1", EMPRESA_ID, request);
+
+        assertThat(response.text()).isEqualTo("texto atualizado");
+        verify(ragChunkRepository, never()).existsByDocumentIdAndChunk(any(), any());
     }
 
     @Test

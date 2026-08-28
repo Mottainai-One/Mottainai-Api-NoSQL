@@ -13,6 +13,7 @@ import com.mottainai.mongoapi.dto.rag.RagChunkRequest;
 import com.mottainai.mongoapi.dto.rag.RagChunkResponse;
 import com.mottainai.mongoapi.dto.rag.RagDocumentRequest;
 import com.mottainai.mongoapi.dto.rag.RagDocumentResponse;
+import com.mottainai.mongoapi.exception.DuplicateChunkException;
 import com.mottainai.mongoapi.exception.DuplicateSlugException;
 import com.mottainai.mongoapi.exception.ResourceNotFoundException;
 import com.mottainai.mongoapi.mapper.RagMapper;
@@ -85,11 +86,18 @@ public class RagService {
     public RagChunkResponse createChunk(String documentId, Long empresaId, RagChunkRequest request) {
         findOwnedDocument(documentId, empresaId);
 
-        int chunkIndex = request.chunk() != null
-                ? request.chunk()
-                : ragChunkRepository.findTopByDocumentIdOrderByChunkDesc(documentId)
-                        .map(existing -> existing.getChunk() + 1)
-                        .orElse(0);
+        int chunkIndex;
+        if (request.chunk() != null) {
+            if (ragChunkRepository.existsByDocumentIdAndChunk(documentId, request.chunk())) {
+                throw new DuplicateChunkException(
+                        "Já existe o chunk " + request.chunk() + " para o documento " + documentId);
+            }
+            chunkIndex = request.chunk();
+        } else {
+            chunkIndex = ragChunkRepository.findTopByDocumentIdOrderByChunkDesc(documentId)
+                    .map(existing -> existing.getChunk() + 1)
+                    .orElse(0);
+        }
 
         RagChunk chunk = RagChunk.builder()
                 .documentId(documentId)
@@ -106,7 +114,11 @@ public class RagService {
     public RagChunkResponse updateChunk(String id, Long empresaId, RagChunkRequest request) {
         RagChunk chunk = findOwnedChunk(id, empresaId);
         chunk.setText(request.text());
-        if (request.chunk() != null) {
+        if (request.chunk() != null && !request.chunk().equals(chunk.getChunk())) {
+            if (ragChunkRepository.existsByDocumentIdAndChunk(chunk.getDocumentId(), request.chunk())) {
+                throw new DuplicateChunkException(
+                        "Já existe o chunk " + request.chunk() + " para o documento " + chunk.getDocumentId());
+            }
             chunk.setChunk(request.chunk());
         }
         RagChunk saved = ragChunkRepository.save(chunk);

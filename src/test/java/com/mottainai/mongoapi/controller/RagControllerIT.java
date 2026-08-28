@@ -117,6 +117,21 @@ class RagControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void createChunk_withExplicitChunkNumberAlreadyTaken_returns409() throws Exception {
+        RagDocument document = seedDocument(EMPRESA_ID, "slug-chunk-conflito");
+        mongoTemplate.save(RagChunk.builder().documentId(document.getId()).chunk(0).text("existente").createdAt(Instant.now()).build());
+
+        String body = """
+                {"chunk":0,"text":"tentando reusar o mesmo número"}
+                """;
+
+        mockMvc.perform(post("/api/v1/rag/documents/{id}/chunks", document.getId())
+                        .param("empresaId", String.valueOf(EMPRESA_ID))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     void createChunk_withEmbeddingInPayload_isIgnoredAndNeverReturned() throws Exception {
         RagDocument document = seedDocument(EMPRESA_ID, "slug-embedding");
 

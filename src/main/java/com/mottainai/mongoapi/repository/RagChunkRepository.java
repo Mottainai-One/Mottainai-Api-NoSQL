@@ -14,5 +14,7 @@ public interface RagChunkRepository extends MongoRepository<RagChunk, String>, R
 
     Optional<RagChunk> findTopByDocumentIdOrderByChunkDesc(String documentId);
 
+    boolean existsByDocumentIdAndChunk(String documentId, Integer chunk);
+
     void deleteByDocumentId(String documentId);
 }
