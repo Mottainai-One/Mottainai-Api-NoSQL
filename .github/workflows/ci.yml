@@ -1,0 +1,432 @@
+﻿name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  # ============================================================
+  # JOB 1: Build e Testes (mvn clean verify) + gate JaCoCo >=80%
+  # Checklist: "mvn clean verify passa localmente" + "cobertura >=80% (gate JaCoCo)"
+  # ============================================================
+  build-and-test:
+    name: 1. Build e Testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build, testes unitarios e de integracao + gate JaCoCo
+        run: |
+          chmod +x mvnw
+          ./mvnw clean verify -B
+
+      - name: Upload cobertura JaCoCo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-reports
+          path: target/site/jacoco/
+
+  # ============================================================
+  # JOB 2: Cobertura de service/controller >= 80%
+  # Checklist: "Cobertura de service/controller continua >=80% (gate do JaCoCo)"
+  # (Reforco explicito alem do gate do Job 1, logando os numeros)
+  # ============================================================
+  coverage-check:
+    name: 2. Cobertura JaCoCo >= 80%
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Rodar verify e extrair cobertura de service/controller
+        run: |
+          set -e
+          chmod +x mvnw
+          ./mvnw clean verify -B
+          echo ">>> Percentuais por classe (service/controller):"
+          if [ -f target/site/jacoco/jacoco.xml ]; then
+            grep -oE 'name="com/mottainai/mongoapi/(service|controller)/[^"]+"[^>]*' target/site/jacoco/jacoco.xml | head -20 || true
+            # Conta classes e imprime o coveredratio do XML raiz
+            grep -oE 'counter type="LINE"[^>]*' target/site/jacoco/jacoco.xml | head -2 || true
+          fi
+          echo ">>> Gate JaCoCo (>=80% LINE em service/controller) aplicado na fase verify."
+
+  # ============================================================
+  # JOB 3: Testes novos cobrem caso feliz + caso negativo (400/404/409)
+  # Checklist: "Testes novos cobrem o caso feliz E pelo menos um caso negativo"
+  # ============================================================
+  covers-happy-and-negative:
+    name: "3. Testes: Caso Feliz e Negativo"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verificar testes com status 2xx, 400, 404 e 409
+        run: |
+          set -e
+          echo ">>> Garantindo que a suíte de integracao cobre caso feliz (2xx) e negativos (400/404/409)"
+
+          TEST_DIR="src/test/java/com/mottainai/mongoapi/controller"
+          IT_FILES=$(find "$TEST_DIR" -name "*ControllerIT.java" 2>/dev/null)
+
+          if [ -z "$IT_FILES" ]; then
+            echo "ERRO: nenhum teste de integracao de controller encontrado em $TEST_DIR"
+            exit 1
+          fi
+
+          echo "$IT_FILES" | while read -r f; do
+            base=$(basename "$f")
+            has_2xx=$(grep -cE 'isOk\(\)|isCreated\(\)|isNoContent\(\)|is\(HttpStatus\.(OK|CREATED|NO_CONTENT)' "$f" || true)
+            has_400=$(grep -cE 'isBadRequest\(\)|400' "$f" || true)
+            has_404=$(grep -cE 'isNotFound\(\)|404' "$f" || true)
+            has_409=$(grep -cE 'isConflict\(\)|409' "$f" || true)
+
+            echo "  $base -> 2xx:$has_2xx  400:$has_400  404:$has_404  409:$has_409"
+
+            if [ "$has_2xx" -eq 0 ]; then
+              echo "ERRO: $base nao cobre caso feliz (2xx)"
+              exit 1
+            fi
+            # Cada controller de integracao deve ter pelo menos um caso negativo (400, 404 ou 409)
+            neg_total=$(( has_400 + has_404 + has_409 ))
+            if [ "$neg_total" -eq 0 ]; then
+              echo "ERRO: $base nao cobre nenhum caso negativo (400/404/409)"
+              exit 1
+            fi
+          done
+
+          echo ">>> Caso feliz e casos negativos cobertos OK"
+
+  # ============================================================
+  # JOB 4: Contrato read-only com a IA Layer
+  # Checklist: "Nenhum endpoint novo escreve em conversations, messages,
+  #            metrics ou agent_executions (somente leitura)"
+  # ============================================================
+  ia-layer-readonly:
+    name: 4. Contrato Read-Only IA Layer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar read-only nas colecoes da IA Layer
+        run: |
+          set -e
+          echo ">>> Colecoes conversations/messages/metrics/agent_executions devem ser SOMENTE leitura"
+
+          REPOS=(
+            "ConversationRepository.java"
+            "ConversationRepositoryImpl.java"
+            "MessageRepository.java"
+            "MetricRepository.java"
+            "MetricRepositoryImpl.java"
+            "AgentExecutionRepository.java"
+            "AgentExecutionRepositoryImpl.java"
+          )
+
+          for repo in "${REPOS[@]}"; do
+            f="src/main/java/com/mottainai/mongoapi/repository/$repo"
+            if [ ! -f "$f" ]; then
+              echo "ERRO: repositorio ausente: $repo"
+              exit 1
+            fi
+            # Nenhum metodo de escrita (save/delete/insert/update/remove)
+            if grep -qE '\b(save|delete|insert|update|remove|dropCollection)\b' "$f"; then
+              echo "ERRO: $repo contem operacao de escrita"
+              echo "  -> regra: somente leituras em conversations/messages/metrics/agent_executions"
+              grep -nE '\b(save|delete|insert|update|remove|dropCollection)\b' "$f" || true
+              exit 1
+            fi
+          done
+
+          echo ">>> Read-only da IA Layer OK"
+
+  # ============================================================
+  # JOB 5: Contrato empresaId obrigatorio e cross-tenant -> 404
+  # Checklist: "empresaId obrigatorio em toda consulta nova; acesso a dado
+  #            de outra empresa retorna 404, nao 403 nem os dados"
+  # ============================================================
+  tenant-isolation:
+    name: 5. Contrato empresaId / Isolamento 404
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar empresaId obrigatorio e 404 cross-tenant
+        run: |
+          set -e
+          echo ">>> Consultas exigem empresaId; cross-tenant retorna 404 (nunca 403 nem dados)"
+
+          # 1) Nenhum uso de 403/FORBIDDEN (acesso a outra empresa NAO pode retornar 403)
+          if grep -rE '403|FORBIDDEN|isForbidden' src/main --include="*.java" | grep -q .; then
+            echo "ERRO: encontrado uso de 403/FORBIDDEN no codigo"
+            grep -rnE '403|FORBIDDEN|isForbidden' src/main --include="*.java" || true
+            exit 1
+          fi
+
+          # 2) O handler global mapeia ResourceNotFoundException -> 404
+          handler="src/main/java/com/mottainai/mongoapi/exception/GlobalExceptionHandler.java"
+          if ! grep -qE 'ResourceNotFoundException' "$handler" || ! grep -qE 'NOT_FOUND' "$handler"; then
+            echo "ERRO: GlobalExceptionHandler nao mapeia recurso inexistente para 404 (NOT_FOUND)"
+            exit 1
+          fi
+
+          # 3) Todos os controllers de consulta recebem empresaId obrigatorio
+          #    (Conversation/Execution/Metrics/Rag de leitura) via @RequestParam/@PathVariable
+          controllers=(
+            "ConversationController.java"
+            "ExecutionController.java"
+            "MetricsController.java"
+            "RagController.java"
+          )
+          for c in "${controllers[@]}"; do
+            f="src/main/java/com/mottainai/mongoapi/controller/$c"
+            [ -f "$f" ] || { echo "ERRO: controller ausente: $c"; exit 1; }
+            if ! grep -q 'empresaId' "$f"; then
+              echo "ERRO: $c nao trata empresaId"
+              exit 1
+            fi
+          done
+
+          echo ">>> Isolamento por empresaId OK (404, sem 403)"
+
+  # ============================================================
+  # JOB 6: Contrato embedding (nunca aceito nem devolvido)
+  # Checklist: "embedding continua nunca aceito na entrada nem devolvido
+  #            em nenhuma resposta"
+  # ============================================================
+  embedding-contract:
+    name: 6. Contrato Embedding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar que embedding nunca e aceito nem devolvido
+        run: |
+          set -e
+          echo ">>> embedding nao pode ser declarado em DTOs de request nem de response"
+
+          # Detecta "embedding" fora de comentarios (//, /* */, javadoc *) em arquivos Java.
+          # Comentarios explicativos ("Sem campo embedding...") sao permitidos.
+          python3 - <<'PY'
+          import re, sys
+          from pathlib import Path
+          
+          ROOT = Path("src/main/java/com/mottainai/mongoapi")
+          RAG_DTO = ROOT / "dto/rag"
+          
+          if not RAG_DTO.is_dir():
+              print("ERRO: diretorio de DTOs RAG ausente", file=sys.stderr)
+              sys.exit(1)
+          
+          
+          def has_code_occurrence(text):
+              # Remove blocos de comentario (/* ... */), linhas // e linhas javadoc/asterisco.
+              text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+              code_lines = []
+              for raw in text.splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith(("//", "*", "/*")):
+                      continue
+                  code_lines.append(line)
+              return any("embedding" in ln for ln in code_lines)
+          
+          fail = False
+          # 1) DTOs de request/response RAG nao podem declarar embedding
+          for p in sorted(RAG_DTO.glob("*.java")):
+              if has_code_occurrence(p.read_text(encoding="utf-8", errors="ignore")):
+                  print(f"ERRO: 'embedding' em linha de codigo (nao-comentada): {p}", file=sys.stderr)
+                  fail = True
+          
+          # 2) Nenhum DTO de resposta declara embedding
+          for p in sorted((ROOT / "dto").rglob("*.java")):
+              if has_code_occurrence(p.read_text(encoding="utf-8", errors="ignore")):
+                  print(f"ERRO: 'embedding' declarado em DTO: {p}", file=sys.stderr)
+                  fail = True
+          
+          sys.exit(1 if fail else 0)
+          PY
+
+          # O documento RagChunk pode ter o atributo (persistido) mas a criacao via API
+          # nunca aceita embedding da entrada (seta null). Validar o servico.
+          rag_service="src/main/java/com/mottainai/mongoapi/service/RagService.java"
+          if ! grep -qE 'embedding\(null\)|setEmbedding\(null\)' "$rag_service"; then
+            echo "ERRO: RagService nao garante embedding null ao criar chunk"
+            exit 1
+          fi
+
+          echo ">>> Contrato de embedding OK (nunca aceito nem devolvido)"
+
+  # ============================================================
+  # JOB 7: Contrato de indices (auto-index-creation false; so via seed)
+  # Checklist: "auto-index-creation continua false; indices so mudam via
+  #            scripts/mongo-seed.js"
+  # ============================================================
+  index-contract:
+    name: 7. Contrato de Indices
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar auto-index-creation false e indices so no seed
+        run: |
+          set -e
+          echo ">>> auto-index-creation deve ser false; a API nunca cria/alterar indices"
+
+          # 1) application.yml e example devem ter auto-index-creation: false
+          for f in src/main/resources/application.yml src/main/resources/application-example.yml; do
+            if ! grep -qE 'auto-index-creation:\s*false' "$f"; then
+              echo "ERRO: $f nao tem 'auto-index-creation: false'"
+              exit 1
+            fi
+          done
+
+          # 2) Nenhum ensureIndex/indexOps no codigo de main (app cria indices)
+          if grep -rE 'indexOps|ensureIndex|createIndex' src/main --include="*.java" | grep -q .; then
+            echo "ERRO: a aplicacao cria/altera indices em src/main"
+            grep -rnE 'indexOps|ensureIndex|createIndex' src/main --include="*.java" || true
+            exit 1
+          fi
+
+          # 3) O script de seed e o unico lugar de definicao de indices
+          if [ ! -f scripts/mongo-seed.js ]; then
+            echo "ERRO: scripts/mongo-seed.js ausente (fonte unica de indices)"
+            exit 1
+          fi
+          if ! grep -qiE 'createIndex|createIndexes' scripts/mongo-seed.js; then
+            echo "ERRO: scripts/mongo-seed.js nao define indices"
+            exit 1
+          fi
+
+          echo ">>> Contrato de indices OK (app nao cria; seed e a fonte unica)"
+
+  # ============================================================
+  # JOB 8: RAG - search retorna chunks + cascata de exclusao
+  # Checklist: "/rag/search continua retornando os chunks esperados" e
+  #            "Cascata de exclusao documento -> chunks continua funcionando"
+  # ============================================================
+  rag-contract:
+    name: 8. RAG Search e Cascata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar contrato RAG (search restrito e cascata de exclusao)
+        run: |
+          set -e
+          echo ">>> RAG: /rag/search retorna chunks da propria empresa; exclusao em cascata"
+
+          rag_service="src/main/java/com/mottainai/mongoapi/service/RagService.java"
+
+          # Search restrito aos documentos da empresa
+          if ! grep -qE 'public Page<RagChunkResponse> search' "$rag_service"; then
+            echo "ERRO: RagService.search ausente"
+            exit 1
+          fi
+          if ! grep -qE 'findByEmpresaId' "$rag_service"; then
+            echo "ERRO: search nao restringe por empresaId (pode vazar dados de outra empresa)"
+            exit 1
+          fi
+
+          # Cascata de exclusao: apaga chunks de um documento antes de apagar o documento
+          if ! grep -qE 'deleteByDocumentId' "$rag_service"; then
+            echo "ERRO: exclusao de documento nao apaga chunks (cascata ausente)"
+            exit 1
+          fi
+
+          # O indice de texto e criado apenas pelo seed (a API nao cria) -> o teste de
+          # integracao garante que o search funciona quando o indice de texto existe.
+          if ! grep -qE 'searchByTextInDocuments' "$rag_service"; then
+            echo "ERRO: busca textual (searchByTextInDocuments) ausente"
+            exit 1
+          fi
+
+          # Teste de integracao deve cobrir a cascata
+          rag_it="src/test/java/com/mottainai/mongoapi/controller/RagControllerIT.java"
+          if [ -f "$rag_it" ]; then
+            if ! grep -qE 'cascadesToChunks|deleteByDocumentId|deleteDocument_cascades' "$rag_it"; then
+              echo "AVISO: RagControllerIT nao cobre explicitamente a cascata de exclusao"
+            fi
+            if ! grep -qE 'TextIndexDefinition|indexOps' "$rag_it"; then
+              echo "AVISO: teste de search nao valida pre-requisito de indice de texto"
+            fi
+          fi
+
+          echo ">>> Contrato RAG OK"
+
+  # ============================================================
+  # JOB 9: Segredos, .env e convencao de commits
+  # ============================================================
+  security-and-commits:
+    name: 9. Segredos, .env e Commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Convencao de commits
+        run: |
+          set -e
+          PATTERN="^(feat|fix|docs|style|refactor|test|chore|ci|perf|build|revert):"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMITS=$(git log --oneline ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+          else
+            COMMITS=$(git log --oneline -10)
+          fi
+
+          echo "$COMMITS" | while read -r line; do
+            [ -z "$line" ] && continue
+            COMMIT_MSG=$(echo "$line" | cut -d' ' -f2-)
+            if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+              echo "ERRO: Commit nao segue a convencao: $COMMIT_MSG"
+              exit 1
+            fi
+          done
+
+          echo "Convencao de commits OK"
+
+      - name: Gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o gitleaks.tgz
+          tar -xzf gitleaks.tgz gitleaks
+          ./gitleaks git --no-banner --redact -v
+
+      - name: Protecao de credenciais e .env
+        run: |
+          set -e
+          echo ">>> Verificando que a URI do MongoDB nao esta hardcoded"
+
+          # application-example.yml usa placeholder explicitamente (OK)
+          # Nenhum arquivo de config real commitado
+          if find src/main/resources -name "application-prod*.yml" -o -name "application*.properties" 2>/dev/null | grep -q .; then
+            echo "ERRO: arquivo de configuracao de producao commitado"
+            exit 1
+          fi
+
+          # Sem DSN com credenciais hardcoded no codigo
+          if grep -rEn 'mongodb(\+srv)?://[^<\s{}]+:[^@\s{}]+@' src/main --include="*.java" | grep -q .; then
+            echo "ERRO: credencial MongoDB hardcoded no codigo"
+            exit 1
+          fi
+
+          echo "Protecao de credenciais OK"
