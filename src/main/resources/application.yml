@@ -1,0 +1,23 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: mottainai-mongo-api
+  data:
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/mottainai}
+      # Índices já existem (criados pelo script de seed / IA Layer). A API nunca cria/altera índices.
+      auto-index-creation: false
+    web:
+      pageable:
+        default-page-size: 20
+        max-page-size: 100
+  jackson:
+    default-property-inclusion: non_null
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs

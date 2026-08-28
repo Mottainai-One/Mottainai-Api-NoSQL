@@ -1,0 +1,71 @@
+package com.mottainai.mongoapi.controller;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Instant;
+
+import org.junit.jupiter.api.Test;
+
+import com.mottainai.mongoapi.AbstractIntegrationTest;
+import com.mottainai.mongoapi.document.AgentExecution;
+import com.mottainai.mongoapi.document.Metric;
+
+class MetricsControllerIT extends AbstractIntegrationTest {
+
+    private static final Long EMPRESA_ID = 1L;
+    private static final Long OTHER_EMPRESA_ID = 2L;
+
+    @Test
+    void listMetrics_withoutEmpresaId_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/metrics"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void listMetrics_returnsOnlyOwnEmpresaMetrics() throws Exception {
+        mongoTemplate.save(Metric.builder().empresaId(EMPRESA_ID).agent("funcionario")
+                .status("completed").latency(1.2).judgeScore(0.9).createdAt(Instant.now()).build());
+        mongoTemplate.save(Metric.builder().empresaId(OTHER_EMPRESA_ID).agent("funcionario")
+                .status("completed").latency(2.5).judgeScore(0.8).createdAt(Instant.now()).build());
+
+        mockMvc.perform(get("/api/v1/metrics").param("empresaId", String.valueOf(EMPRESA_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].empresaId").value(EMPRESA_ID));
+    }
+
+    @Test
+    void summary_ignoresNullJudgeScoreInAverageAndComputesErrorRate() throws Exception {
+        mongoTemplate.save(Metric.builder().empresaId(EMPRESA_ID).agent("funcionario")
+                .status("completed").latency(1.0).estimatedCost(0.10).judgeScore(0.8).createdAt(Instant.now()).build());
+        mongoTemplate.save(Metric.builder().empresaId(EMPRESA_ID).agent("funcionario")
+                .status("error").latency(2.0).estimatedCost(0.20).judgeScore(null).createdAt(Instant.now()).build());
+
+        mockMvc.perform(get("/api/v1/metrics/summary").param("empresaId", String.valueOf(EMPRESA_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.agents[0].agent").value("funcionario"))
+                .andExpect(jsonPath("$.agents[0].totalExecutions").value(2))
+                .andExpect(jsonPath("$.agents[0].avgJudgeScore").value(0.8))
+                .andExpect(jsonPath("$.agents[0].errorRate").value(0.5));
+    }
+
+    @Test
+    void listExecutions_withoutEmpresaId_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/executions"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void listExecutions_returnsOnlyOwnEmpresaExecutions() throws Exception {
+        mongoTemplate.save(AgentExecution.builder().empresaId(EMPRESA_ID).agent("funcionario")
+                .status("completed").latency(1.5).createdAt(Instant.now()).startedAt(Instant.now()).build());
+        mongoTemplate.save(AgentExecution.builder().empresaId(OTHER_EMPRESA_ID).agent("funcionario")
+                .status("completed").latency(1.5).createdAt(Instant.now()).startedAt(Instant.now()).build());
+
+        mockMvc.perform(get("/api/v1/executions").param("empresaId", String.valueOf(EMPRESA_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1));
+    }
+}
