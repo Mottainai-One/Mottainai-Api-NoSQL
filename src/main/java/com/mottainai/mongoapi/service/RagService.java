@@ -88,7 +88,7 @@ public class RagService {
         int chunkIndex = request.chunk() != null
                 ? request.chunk()
                 : ragChunkRepository.findTopByDocumentIdOrderByChunkDesc(documentId)
-                        .map(existing -> existing.getChunk() + 1)
+                        .map(existing -> (existing.getChunk() == null ? -1 : existing.getChunk()) + 1)
                         .orElse(0);
 
         RagChunk chunk = RagChunk.builder()

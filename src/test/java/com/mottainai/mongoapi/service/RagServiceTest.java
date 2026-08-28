@@ -160,6 +160,21 @@ class RagServiceTest {
     }
 
     @Test
+    void createChunk_whenExistingTopChunkHasNullNumber_doesNotThrowAndStartsAtZero() {
+        RagDocument document = sampleDocument("doc-1", EMPRESA_ID, "slug-1");
+        RagChunkRequest request = new RagChunkRequest(null, "novo chunk");
+
+        when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID)).thenReturn(Optional.of(document));
+        when(ragChunkRepository.findTopByDocumentIdOrderByChunkDesc("doc-1"))
+                .thenReturn(Optional.of(RagChunk.builder().documentId("doc-1").chunk(null).build()));
+        when(ragChunkRepository.save(any(RagChunk.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RagChunkResponse response = ragService.createChunk("doc-1", EMPRESA_ID, request);
+
+        assertThat(response.chunk()).isEqualTo(0);
+    }
+
+    @Test
     void createChunk_whenDocumentHasNoChunksYet_startsAtZero() {
         RagDocument document = sampleDocument("doc-1", EMPRESA_ID, "slug-1");
         RagChunkRequest request = new RagChunkRequest(null, "primeiro chunk");
