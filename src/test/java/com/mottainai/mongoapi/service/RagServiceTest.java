@@ -204,7 +204,7 @@ class RagServiceTest {
 
     @Test
     void search_whenEmpresaHasNoDocuments_returnsEmptyPageWithoutQueryingChunks() {
-        when(ragDocumentRepository.findByEmpresaId(EMPRESA_ID)).thenReturn(List.of());
+        when(ragDocumentRepository.findIdOnlyByEmpresaId(EMPRESA_ID)).thenReturn(List.of());
         Pageable pageable = PageRequest.of(0, 20);
         when(ragChunkRepository.searchByTextInDocuments("estoque", List.of(), pageable))
                 .thenReturn(Page.empty(pageable));
@@ -217,9 +217,9 @@ class RagServiceTest {
 
     @Test
     void search_whenEmpresaHasDocuments_delegatesToRepositoryWithResolvedIds() {
-        RagDocument doc1 = sampleDocument("doc-1", EMPRESA_ID, "slug-1");
-        RagDocument doc2 = sampleDocument("doc-2", EMPRESA_ID, "slug-2");
-        when(ragDocumentRepository.findByEmpresaId(EMPRESA_ID)).thenReturn(List.of(doc1, doc2));
+        RagDocumentRepository.IdOnly doc1 = () -> "doc-1";
+        RagDocumentRepository.IdOnly doc2 = () -> "doc-2";
+        when(ragDocumentRepository.findIdOnlyByEmpresaId(EMPRESA_ID)).thenReturn(List.of(doc1, doc2));
 
         RagChunk chunk = RagChunk.builder().id("chunk-1").documentId("doc-1").chunk(0).text("estoque baixo").build();
         Pageable pageable = PageRequest.of(0, 20);

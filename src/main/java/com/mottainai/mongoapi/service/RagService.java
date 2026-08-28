@@ -119,8 +119,8 @@ public class RagService {
     }
 
     public Page<RagChunkResponse> search(Long empresaId, String query, Pageable pageable) {
-        List<String> documentIds = ragDocumentRepository.findByEmpresaId(empresaId).stream()
-                .map(RagDocument::getId)
+        List<String> documentIds = ragDocumentRepository.findIdOnlyByEmpresaId(empresaId).stream()
+                .map(RagDocumentRepository.IdOnly::getId)
                 .toList();
         return ragChunkRepository.searchByTextInDocuments(query, documentIds, pageable).map(mapper::toResponse);
     }

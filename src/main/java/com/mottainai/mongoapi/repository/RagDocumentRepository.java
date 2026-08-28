@@ -15,13 +15,20 @@ public interface RagDocumentRepository extends MongoRepository<RagDocument, Stri
 
     Page<RagDocument> findByEmpresaIdAndSource(Long empresaId, String source, Pageable pageable);
 
-    /** Usada apenas para resolver os IDs de documentos da empresa antes da busca textual em rag_chunks. */
-    List<RagDocument> findByEmpresaId(Long empresaId);
-
     Optional<RagDocument> findByIdAndEmpresaId(String id, Long empresaId);
 
     Optional<RagDocument> findBySlugAndEmpresaId(String slug, Long empresaId);
 
     /** slug é globalmente único (não por empresa) — usado para a checagem de conflito 409. */
     Optional<RagDocument> findBySlug(String slug);
+
+    /**
+     * Projeção somente com o _id, usada para resolver os documentos da empresa antes da busca
+     * textual em rag_chunks sem carregar título/fonte/slug de cada documento.
+     */
+    List<IdOnly> findIdOnlyByEmpresaId(Long empresaId);
+
+    interface IdOnly {
+        String getId();
+    }
 }
