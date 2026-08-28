@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -27,6 +27,7 @@ jobs:
 
       - name: Build, testes unitarios e de integracao + gate JaCoCo
         run: |
+          chmod +x mvnw
           ./mvnw clean verify -B
 
       - name: Upload cobertura JaCoCo
@@ -57,6 +58,7 @@ jobs:
       - name: Rodar verify e extrair cobertura de service/controller
         run: |
           set -e
+          chmod +x mvnw
           ./mvnw clean verify -B
           echo ">>> Percentuais por classe (service/controller):"
           if [ -f target/site/jacoco/jacoco.xml ]; then
@@ -222,48 +224,52 @@ jobs:
           set -e
           echo ">>> embedding nao pode ser declarado em DTOs de request nem de response"
 
-          RAG_DTO_DIR="src/main/java/com/mottainai/mongoapi/dto/rag"
-          if [ ! -d "$RAG_DTO_DIR" ]; then
-            echo "ERRO: diretorio de DTOs RAG ausente"
-            exit 1
-          fi
-
-          # Nenhum DTO de request/response RAG DECLARA campo "embedding".
+          # Detecta "embedding" fora de comentarios (//, /* */, javadoc *) em arquivos Java.
           # Comentarios explicativos ("Sem campo embedding...") sao permitidos.
-          # So e erro se o termo aparecer em uma linha de codigo (nao-comentada).
-          has_decl=false
-          for f in "$RAG_DTO_DIR"/*.java; do
-            [ -f "$f" ] || continue
-            while IFS= read -r line; do
-              content="${line#*:}"                    # remove "lineno:"
-              trimmed="$(echo "$content" | sed -E 's/^[[:space:]]+//')"
-              case "$trimmed" in
-                //*|#*|\*|/*) continue ;;             # linhas de comentario
-              esac
-              case "$trimmed" in
-                /*) continue ;;
-              esac
-              if echo "$trimmed" | grep -qE '\bembedding\b'; then
-                echo "ERRO: 'embedding' em linha de codigo (nao-comentada): $f:$line"
-                has_decl=true
-              fi
-            done < <(grep -nE '\bembedding\b' "$f" || true)
-          done
-          if [ "$has_decl" = true ]; then
-            exit 1
-          fi
+          python3 - <<'PY'
+          import re, sys
+          from pathlib import Path
+          
+          ROOT = Path("src/main/java/com/mottainai/mongoapi")
+          RAG_DTO = ROOT / "dto/rag"
+          
+          if not RAG_DTO.is_dir():
+              print("ERRO: diretorio de DTOs RAG ausente", file=sys.stderr)
+              sys.exit(1)
+          
+          
+          def has_code_occurrence(text):
+              # Remove blocos de comentario (/* ... */), linhas // e linhas javadoc/asterisco.
+              text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+              code_lines = []
+              for raw in text.splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith(("//", "*", "/*")):
+                      continue
+                  code_lines.append(line)
+              return any("embedding" in ln for ln in code_lines)
+          
+          fail = False
+          # 1) DTOs de request/response RAG nao podem declarar embedding
+          for p in sorted(RAG_DTO.glob("*.java")):
+              if has_code_occurrence(p.read_text(encoding="utf-8", errors="ignore")):
+                  print(f"ERRO: 'embedding' em linha de codigo (nao-comentada): {p}", file=sys.stderr)
+                  fail = True
+          
+          # 2) Nenhum DTO de resposta declara embedding
+          for p in sorted((ROOT / "dto").rglob("*.java")):
+              if has_code_occurrence(p.read_text(encoding="utf-8", errors="ignore")):
+                  print(f"ERRO: 'embedding' declarado em DTO: {p}", file=sys.stderr)
+                  fail = True
+          
+          sys.exit(1 if fail else 0)
+          PY
 
           # O documento RagChunk pode ter o atributo (persistido) mas a criacao via API
           # nunca aceita embedding da entrada (seta null). Validar o servico.
           rag_service="src/main/java/com/mottainai/mongoapi/service/RagService.java"
           if ! grep -qE 'embedding\(null\)|setEmbedding\(null\)' "$rag_service"; then
             echo "ERRO: RagService nao garante embedding null ao criar chunk"
-            exit 1
-          fi
-
-          # Nenhum DTO de resposta declara embedding
-          if find src/main/java/com/mottainai/mongoapi/dto -name "*.java" -print0 | xargs -0 grep -nE '\bembedding\b' 2>/dev/null | grep -vE ':\s*(\*/|//|/\*|\*)' | grep -qE ':\s*[^/].*\bembedding\b'; then
-            echo "ERRO: 'embedding' declarado em algum DTO de resposta"
             exit 1
           fi
 
