@@ -15,6 +15,11 @@ public interface RagDocumentRepository extends MongoRepository<RagDocument, Stri
 
     Page<RagDocument> findByEmpresaIdAndSource(Long empresaId, String source, Pageable pageable);
 
+    Page<RagDocument> findByEmpresaIdAndCategory(Long empresaId, String category, Pageable pageable);
+
+    /** Chave única atual da coleção (índice ux_rag_documents_empresa_title_version). */
+    Optional<RagDocument> findByEmpresaIdAndTitleAndVersion(Long empresaId, String title, String version);
+
     /** Usada apenas para resolver os IDs de documentos da empresa antes da busca textual em rag_chunks. */
     List<RagDocument> findByEmpresaId(Long empresaId);
 

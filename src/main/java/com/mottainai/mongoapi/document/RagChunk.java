@@ -2,6 +2,7 @@ package com.mottainai.mongoapi.document;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
@@ -40,6 +41,8 @@ public class RagChunk {
 
     /** Calculada exclusivamente pela IA Layer; a API nunca aceita nem devolve este campo. */
     private List<Double> embedding;
+
+    private Map<String, Object> metadata;
 
     private Instant createdAt;
 }
