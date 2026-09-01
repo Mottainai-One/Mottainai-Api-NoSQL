@@ -1,25 +1,38 @@
 // Mottainai — seed do MongoDB para a API Spring (DS2).
 // Idempotente: não duplica documentos já existentes.
 // Uso: mongosh "mongodb://<user>:<senha>@127.0.0.1:27017/mottainai?authSource=admin" scripts/mongo-seed.js
+//
+// Índices e formato dos documentos espelham o banco real da IA Layer.
+// Sempre que a IA Layer mudar o schema, este arquivo deve ser atualizado junto.
 
 const EMPRESA_ID = 1;
 const now = () => new Date();
 
-// ── Índices (iguais aos da IA Layer) ─────────────────────────────
-db.conversations.createIndex({ sessionId: 1 }, { unique: true });
-db.conversations.createIndex({ empresaId: 1, status: 1 });
-db.messages.createIndex({ conversationId: 1, createdAt: 1 });
-db.memories.createIndex({ empresaId: 1, usuarioId: 1 }, { unique: true });
-db.metrics.createIndex({ createdAt: -1 });
-db.metrics.createIndex({ agent: 1, createdAt: -1 });
-db.agent_executions.createIndex({ empresaId: 1, createdAt: -1 });
-db.agent_executions.createIndex({ agent: 1, status: 1 });
-db.rag_documents.createIndex({ empresaId: 1 });
-db.rag_documents.createIndex({ slug: 1 }, { unique: true });
-db.rag_chunks.createIndex({ documentId: 1 });
-db.rag_chunks.createIndex({ documentId: 1, chunk: 1 });
-// Busca textual usada pelo endpoint /rag/search
-db.rag_chunks.createIndex({ text: "text" });
+// ── Índices (nomes e chaves iguais aos da IA Layer) ──────────────
+db.conversations.createIndex({ sessionId: 1 }, { name: "ux_conversations_sessionId", unique: true });
+db.conversations.createIndex({ empresaId: 1, usuarioId: 1, startedAt: -1 }, { name: "ix_conversations_empresa_usuario_startedAt" });
+db.conversations.createIndex({ agent: 1, status: 1 }, { name: "ix_conversations_agent_status" });
+db.conversations.createIndex({ lastInteraction: -1 }, { name: "ix_conversations_lastInteraction" });
+
+db.messages.createIndex({ conversationId: 1, createdAt: 1 }, { name: "ix_messages_conversation_createdAt" });
+db.messages.createIndex({ agent: 1, skill: 1, createdAt: -1 }, { name: "ix_messages_agent_skill_createdAt" });
+
+db.metrics.createIndex({ conversationId: 1, createdAt: -1 }, { name: "ix_metrics_conversation_createdAt" });
+db.metrics.createIndex({ agent: 1, skill: 1, createdAt: -1 }, { name: "ix_metrics_agent_skill_createdAt" });
+
+db.memories.createIndex({ empresaId: 1, usuarioId: 1 }, { name: "ux_memories_empresa_usuario", unique: true });
+db.memories.createIndex({ updatedAt: -1 }, { name: "ix_memories_updatedAt" });
+
+db.agent_executions.createIndex({ conversationId: 1, startedAt: -1 }, { name: "ix_agent_executions_conversation_startedAt" });
+db.agent_executions.createIndex({ agent: 1, status: 1, startedAt: -1 }, { name: "ix_agent_executions_agent_status_startedAt" });
+
+// A chave única de rag_documents é (empresaId, title, version) — o slug deixou de ser único.
+db.rag_documents.createIndex({ empresaId: 1, category: 1, createdAt: -1 }, { name: "ix_rag_documents_empresa_category_createdAt" });
+db.rag_documents.createIndex({ empresaId: 1, title: 1, version: 1 }, { name: "ux_rag_documents_empresa_title_version", unique: true });
+// O índice de texto vive em rag_documents.title (não mais em rag_chunks.text).
+db.rag_documents.createIndex({ title: "text" }, { name: "tx_rag_documents_title", default_language: "english" });
+
+db.rag_chunks.createIndex({ documentId: 1, chunk: 1 }, { name: "ux_rag_chunks_document_chunk", unique: true });
 
 // ── RAG: documentos e chunks ─────────────────────────────────────
 const documentos = [
@@ -27,6 +40,9 @@ const documentos = [
     slug: "politica-estoque-mottainai",
     title: "Política de Gestão de Estoque — Mottainai",
     source: "manual_operacional",
+    category: "MANUAL",
+    version: "1.0",
+    metadata: { audience: "funcionario" },
     chunks: [
       "O sistema Mottainai utiliza o método FEFO (First Expired, First Out) para controle de estoque. Produtos com data de vencimento mais próxima devem ser vendidos prioritariamente.",
       "O nível mínimo de estoque (ponto de pedido) é calculado com base na demanda média dos últimos 30 dias mais o estoque de segurança de 20%.",
@@ -39,6 +55,9 @@ const documentos = [
     slug: "guia-vencimento-pereciveis",
     title: "Guia de Controle de Perecíveis e Validade",
     source: "manual_operacional",
+    category: "MANUAL",
+    version: "1.0",
+    metadata: { audience: "funcionario" },
     chunks: [
       "Leite UHT pode ser armazenado em temperatura ambiente até 6 meses. Após aberto, refrigerar e consumir em até 5 dias.",
       "Iogurtes e produtos lácteos refrigerados devem ser mantidos entre 1°C e 10°C. Alerta de vencimento deve ser emitido com 5 dias de antecedência.",
@@ -51,6 +70,9 @@ const documentos = [
     slug: "procedimento-descarte-doacao",
     title: "Procedimentos de Descarte e Doação",
     source: "manual_operacional",
+    category: "MANUAL",
+    version: "1.0",
+    metadata: { audience: "funcionario" },
     chunks: [
       "Produtos vencidos ou com embalagem violada devem ser descartados conforme normas sanitárias. Registrar no sistema com motivo e quantidade.",
       "Doações de alimentos próximos ao vencimento (>2 dias de validade) podem ser realizadas para entidades cadastradas no sistema.",
@@ -63,6 +85,9 @@ const documentos = [
     slug: "faq-cliente-mottainai",
     title: "FAQ — Perguntas Frequentes de Clientes",
     source: "faq",
+    category: "FAQ",
+    version: "1.0",
+    metadata: { audience: "cliente" },
     chunks: [
       "Posso devolver um produto comprado? Sim, em até 7 dias após a compra, mediante apresentação do cupom fiscal.",
       "Como funciona o programa de fidelidade? Cada compra acumula pontos que podem ser trocados por descontos nas próximas compras.",
@@ -75,16 +100,19 @@ const documentos = [
 
 let novosDocs = 0, novosChunks = 0;
 documentos.forEach((doc) => {
-  if (db.rag_documents.findOne({ slug: doc.slug })) { return; }
+  // Idempotência pela chave única atual da coleção: (empresaId, title, version).
+  if (db.rag_documents.findOne({ empresaId: EMPRESA_ID, title: doc.title, version: doc.version })) { return; }
   const res = db.rag_documents.insertOne({
     slug: doc.slug, empresaId: EMPRESA_ID, title: doc.title,
-    source: doc.source, createdAt: now()
+    source: doc.source, category: doc.category, version: doc.version,
+    metadata: doc.metadata, createdAt: now()
   });
   novosDocs++;
   doc.chunks.forEach((texto, i) => {
     db.rag_chunks.insertOne({
       documentId: res.insertedId, chunk: i, text: texto,
-      embedding: null, createdAt: now()
+      // embedding é calculado exclusivamente pela IA Layer; o seed nunca o preenche.
+      embedding: null, metadata: { section: doc.category.toLowerCase() }, createdAt: now()
     });
     novosChunks++;
   });
@@ -128,10 +156,13 @@ if (!db.conversations.findOne({ sessionId: SESSION_ID })) {
   });
 
   db.agent_executions.insertOne({
-    empresaId: EMPRESA_ID, sessionId: SESSION_ID, agent: "funcionario",
+    empresaId: EMPRESA_ID, sessionId: SESSION_ID,
+    conversationId: conv.insertedId, agent: "funcionario", skill: null,
     status: "completed", latency: 1.842,
     nodeLatenciesMs: { supervisor: 120.5, funcionario: 1500.2, juiz: 221.3 },
-    error: null, startedAt: now(), createdAt: now()
+    tools: ["rag_search"], executionFlow: ["Supervisor", "Funcionário", "Resposta"],
+    // error é documento (ex.: { message: "APIStatusError" }), não string.
+    error: null, startedAt: now(), finishedAt: now(), createdAt: now()
   });
 }
 
