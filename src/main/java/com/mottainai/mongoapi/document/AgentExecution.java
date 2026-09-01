@@ -1,12 +1,15 @@
 package com.mottainai.mongoapi.document;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -31,11 +34,29 @@ public class AgentExecution {
 
     private Long empresaId;
     private String sessionId;
+
+    @Field(targetType = FieldType.OBJECT_ID)
+    private String conversationId;
+
     private String agent;
+    private String skill;
     private String status;
     private Double latency;
     private Map<String, Double> nodeLatenciesMs;
-    private String error;
+
+    /** Ferramentas usadas na execução (ex.: "rag_search", "postgres_query"). */
+    private List<String> tools;
+
+    /** Sequência de nós percorridos pelo agente (ex.: "Supervisor" -> "Cliente" -> "Resposta"). */
+    private List<String> executionFlow;
+
+    /**
+     * A IA Layer passou a gravar o erro como documento estruturado (ex.: {"message": "APIStatusError"}),
+     * e não mais como string — mapear como String devolvia o JSON escapado dentro de uma string.
+     */
+    private Map<String, Object> error;
+
     private Instant startedAt;
+    private Instant finishedAt;
     private Instant createdAt;
 }
