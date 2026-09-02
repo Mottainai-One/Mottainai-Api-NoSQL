@@ -1,5 +1,7 @@
 package com.mottainai.mongoapi.dto.rag;
 
+import java.util.Map;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -14,6 +16,8 @@ public record RagChunkRequest(
 
         @NotBlank
         @Size(max = 8000)
-        String text
+        String text,
+
+        Map<String, Object> metadata
 ) {
 }

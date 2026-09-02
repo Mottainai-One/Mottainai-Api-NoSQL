@@ -63,7 +63,7 @@ class RagServiceTest {
 
     @Test
     void createDocument_whenSlugUnique_savesDocument() {
-        RagDocumentRequest request = new RagDocumentRequest("novo-slug", EMPRESA_ID, "Título", "manual_operacional");
+        RagDocumentRequest request = new RagDocumentRequest("novo-slug", EMPRESA_ID, "Título", "manual_operacional", "MANUAL", "1.0", null);
         when(ragDocumentRepository.findBySlug("novo-slug")).thenReturn(Optional.empty());
         when(ragDocumentRepository.save(any(RagDocument.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -75,8 +75,38 @@ class RagServiceTest {
     }
 
     @Test
+    void createDocument_withoutSlug_savesDocumentAndAppliesDefaultVersion() {
+        // Formato que a IA Layer grava hoje: sem slug, classificado por category.
+        RagDocumentRequest request = new RagDocumentRequest(null, EMPRESA_ID, "FAQ Promoções", null, "FAQ", null, null);
+        when(ragDocumentRepository.save(any(RagDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ArgumentCaptor<RagDocument> captor = ArgumentCaptor.forClass(RagDocument.class);
+        RagDocumentResponse response = ragService.createDocument(request);
+
+        verify(ragDocumentRepository).save(captor.capture());
+        assertThat(captor.getValue().getVersion()).isEqualTo("1.0");
+        assertThat(response.slug()).isNull();
+        assertThat(response.category()).isEqualTo("FAQ");
+        verify(ragDocumentRepository, never()).findBySlug(any());
+    }
+
+    @Test
+    void createDocument_whenTitleAndVersionAlreadyExistForEmpresa_throwsDuplicateSlugException() {
+        RagDocumentRequest request = new RagDocumentRequest(null, EMPRESA_ID, "FAQ Promoções", null, "FAQ", "1.0", null);
+        RagDocument existing = sampleDocument("id-existente", EMPRESA_ID, null);
+        when(ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(EMPRESA_ID, "FAQ Promoções", "1.0"))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> ragService.createDocument(request))
+                .isInstanceOf(DuplicateSlugException.class);
+
+        verify(ragDocumentRepository, never()).save(any());
+    }
+
+    @Test
     void createDocument_whenSlugDuplicate_throwsDuplicateSlugException() {
-        RagDocumentRequest request = new RagDocumentRequest("existente", EMPRESA_ID, "Título", "manual_operacional");
+        RagDocumentRequest request = new RagDocumentRequest("existente", EMPRESA_ID, "Título", "manual_operacional", "MANUAL", "1.0", null);
         when(ragDocumentRepository.findBySlug("existente"))
                 .thenReturn(Optional.of(sampleDocument("id-1", EMPRESA_ID, "existente")));
 
@@ -120,7 +150,7 @@ class RagServiceTest {
     void updateDocument_whenNewSlugUsedByAnotherDocument_throwsDuplicateSlugException() {
         RagDocument document = sampleDocument("id-1", EMPRESA_ID, "slug-atual");
         RagDocument other = sampleDocument("id-2", EMPRESA_ID, "slug-alvo");
-        RagDocumentRequest request = new RagDocumentRequest("slug-alvo", EMPRESA_ID, "Novo título", "faq");
+        RagDocumentRequest request = new RagDocumentRequest("slug-alvo", EMPRESA_ID, "Novo título", "faq", "FAQ", "1.0", null);
 
         when(ragDocumentRepository.findByIdAndEmpresaId("id-1", EMPRESA_ID)).thenReturn(Optional.of(document));
         when(ragDocumentRepository.findBySlug("slug-alvo")).thenReturn(Optional.of(other));
@@ -132,7 +162,7 @@ class RagServiceTest {
     @Test
     void updateDocument_whenSlugBelongsToItself_updatesNormally() {
         RagDocument document = sampleDocument("id-1", EMPRESA_ID, "slug-atual");
-        RagDocumentRequest request = new RagDocumentRequest("slug-atual", EMPRESA_ID, "Novo título", "faq");
+        RagDocumentRequest request = new RagDocumentRequest("slug-atual", EMPRESA_ID, "Novo título", "faq", "FAQ", "1.0", null);
 
         when(ragDocumentRepository.findByIdAndEmpresaId("id-1", EMPRESA_ID)).thenReturn(Optional.of(document));
         when(ragDocumentRepository.findBySlug("slug-atual")).thenReturn(Optional.of(document));
@@ -147,7 +177,7 @@ class RagServiceTest {
     @Test
     void createChunk_whenChunkNumberNotProvided_usesMaxPlusOne() {
         RagDocument document = sampleDocument("doc-1", EMPRESA_ID, "slug-1");
-        RagChunkRequest request = new RagChunkRequest(null, "texto do novo chunk");
+        RagChunkRequest request = new RagChunkRequest(null, "texto do novo chunk", null);
 
         when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID)).thenReturn(Optional.of(document));
         when(ragChunkRepository.findTopByDocumentIdOrderByChunkDesc("doc-1"))
@@ -162,7 +192,7 @@ class RagServiceTest {
     @Test
     void createChunk_whenDocumentHasNoChunksYet_startsAtZero() {
         RagDocument document = sampleDocument("doc-1", EMPRESA_ID, "slug-1");
-        RagChunkRequest request = new RagChunkRequest(null, "primeiro chunk");
+        RagChunkRequest request = new RagChunkRequest(null, "primeiro chunk", null);
 
         when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID)).thenReturn(Optional.of(document));
         when(ragChunkRepository.findTopByDocumentIdOrderByChunkDesc("doc-1")).thenReturn(Optional.empty());
@@ -176,7 +206,7 @@ class RagServiceTest {
     @Test
     void createChunk_whenChunkNumberProvided_usesProvidedValueAndNeverPersistsEmbedding() {
         RagDocument document = sampleDocument("doc-1", EMPRESA_ID, "slug-1");
-        RagChunkRequest request = new RagChunkRequest(10, "texto explícito");
+        RagChunkRequest request = new RagChunkRequest(10, "texto explícito", null);
 
         when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID)).thenReturn(Optional.of(document));
         ArgumentCaptor<RagChunk> captor = ArgumentCaptor.forClass(RagChunk.class);
@@ -196,7 +226,7 @@ class RagServiceTest {
         when(ragChunkRepository.findById("chunk-1")).thenReturn(Optional.of(chunk));
         when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", OTHER_EMPRESA_ID)).thenReturn(Optional.empty());
 
-        RagChunkRequest request = new RagChunkRequest(null, "novo texto");
+        RagChunkRequest request = new RagChunkRequest(null, "novo texto", null);
 
         assertThatThrownBy(() -> ragService.updateChunk("chunk-1", OTHER_EMPRESA_ID, request))
                 .isInstanceOf(ResourceNotFoundException.class);
