@@ -19,8 +19,6 @@ import com.mottainai.mongoapi.AbstractIntegrationTest;
 import com.mottainai.mongoapi.document.RagChunk;
 import com.mottainai.mongoapi.document.RagDocument;
 
-import org.springframework.data.mongodb.core.index.TextIndexDefinition;
-
 class RagControllerIT extends AbstractIntegrationTest {
 
     private static final Long EMPRESA_ID = 1L;
@@ -154,11 +152,8 @@ class RagControllerIT extends AbstractIntegrationTest {
 
     @Test
     void search_isRestrictedToOwnEmpresaDocuments() throws Exception {
-        // rag_chunks.text só existe com índice de texto em produção (criado pelo mongo-seed.js);
-        // a API nunca cria índices, então o teste precisa recriá-lo aqui após o drop do @BeforeEach.
-        mongoTemplate.indexOps(RagChunk.class)
-                .ensureIndex(TextIndexDefinition.builder().onField("text").build());
-
+        // Sem criar índice de texto de propósito: a IA Layer removeu o índice de texto de
+        // rag_chunks.text, então a busca precisa funcionar exatamente como em produção — sem ele.
         RagDocument ownDocument = seedDocument(EMPRESA_ID, "slug-busca-propria");
         mongoTemplate.save(RagChunk.builder().documentId(ownDocument.getId()).chunk(0)
                 .text("controle de estoque perecível").createdAt(Instant.now()).build());
@@ -173,5 +168,18 @@ class RagControllerIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].documentId").value(ownDocument.getId()));
+    }
+
+    @Test
+    void search_withRegexMetacharactersInQuery_treatsThemAsLiteralText() throws Exception {
+        RagDocument document = seedDocument(EMPRESA_ID, "slug-busca-metacaractere");
+        mongoTemplate.save(RagChunk.builder().documentId(document.getId()).chunk(0)
+                .text("desconto de 20% (vinte por cento) em perecíveis").createdAt(Instant.now()).build());
+
+        mockMvc.perform(get("/api/v1/rag/search")
+                        .param("empresaId", String.valueOf(EMPRESA_ID))
+                        .param("q", "(vinte"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)));
     }
 }
