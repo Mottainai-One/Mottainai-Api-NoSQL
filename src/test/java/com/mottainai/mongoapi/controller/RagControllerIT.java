@@ -30,9 +30,13 @@ class RagControllerIT extends AbstractIntegrationTest {
     private ObjectMapper objectMapper;
 
     private RagDocument seedDocument(Long empresaId, String slug) {
+        return seedDocument(empresaId, slug, "Política de Estoque", "1.0");
+    }
+
+    private RagDocument seedDocument(Long empresaId, String slug, String title, String version) {
         RagDocument document = RagDocument.builder()
-                .slug(slug).empresaId(empresaId).title("Política de Estoque")
-                .source("manual_operacional").createdAt(Instant.now()).build();
+                .slug(slug).empresaId(empresaId).title(title).version(version)
+                .category("MANUAL").source("manual_operacional").createdAt(Instant.now()).build();
         return mongoTemplate.save(document);
     }
 
@@ -46,28 +50,32 @@ class RagControllerIT extends AbstractIntegrationTest {
     @Test
     void createDocument_thenGetById_success() throws Exception {
         String body = """
-                {"slug":"politica-estoque","empresaId":1,"title":"Política de Estoque","source":"manual_operacional"}
+                {"slug":"politica-estoque","empresaId":1,"title":"Política de Estoque",
+                "source":"manual_operacional","category":"MANUAL","version":"1.0"}
                 """;
 
         String response = mockMvc.perform(post("/api/v1/rag/documents")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.slug").value("politica-estoque"))
+                .andExpect(jsonPath("$.version").value("1.0"))
                 .andReturn().getResponse().getContentAsString();
 
         String id = objectMapper.readTree(response).get("id").asText();
 
         mockMvc.perform(get("/api/v1/rag/documents/{id}", id).param("empresaId", "1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.slug").value("politica-estoque"));
+                .andExpect(jsonPath("$.slug").value("politica-estoque"))
+                .andExpect(jsonPath("$.category").value("MANUAL"));
     }
 
     @Test
-    void createDocument_withDuplicateSlug_returns409() throws Exception {
-        seedDocument(EMPRESA_ID, "slug-existente");
+    void createDocument_withDuplicateTitleAndVersion_returns409() throws Exception {
+        seedDocument(EMPRESA_ID, "slug-existente", "Título Duplicado", "1.0");
 
         String body = """
-                {"slug":"slug-existente","empresaId":1,"title":"Outro título","source":"faq"}
+                {"slug":"outro-slug","empresaId":1,"title":"Título Duplicado",
+                "source":"faq","category":"FAQ","version":"1.0"}
                 """;
 
         mockMvc.perform(post("/api/v1/rag/documents")
@@ -121,7 +129,7 @@ class RagControllerIT extends AbstractIntegrationTest {
         RagDocument document = seedDocument(EMPRESA_ID, "slug-embedding");
 
         String body = """
-                {"chunk":0,"text":"texto do chunk","embedding":[0.1,0.2,0.3]}
+                {"chunk":0,"text":"texto do chunk","embedding":[0.1,0.2,0.3],"metadata":{"section":"manual"}}
                 """;
 
         String response = mockMvc.perform(post("/api/v1/rag/documents/{id}/chunks", document.getId())
@@ -129,6 +137,7 @@ class RagControllerIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.embedding").doesNotExist())
+                .andExpect(jsonPath("$.metadata.section").value("manual"))
                 .andReturn().getResponse().getContentAsString();
 
         String chunkId = objectMapper.readTree(response).get("id").asText();
@@ -154,24 +163,19 @@ class RagControllerIT extends AbstractIntegrationTest {
 
     @Test
     void search_isRestrictedToOwnEmpresaDocuments() throws Exception {
-        // rag_chunks.text só existe com índice de texto em produção (criado pelo mongo-seed.js);
+        // rag_documents.title só tem índice de texto em produção (criado pelo mongo-seed.js);
         // a API nunca cria índices, então o teste precisa recriá-lo aqui após o drop do @BeforeEach.
-        mongoTemplate.indexOps(RagChunk.class)
-                .ensureIndex(TextIndexDefinition.builder().onField("text").build());
+        mongoTemplate.indexOps(RagDocument.class)
+                .ensureIndex(TextIndexDefinition.builder().onField("title").build());
 
-        RagDocument ownDocument = seedDocument(EMPRESA_ID, "slug-busca-propria");
-        mongoTemplate.save(RagChunk.builder().documentId(ownDocument.getId()).chunk(0)
-                .text("controle de estoque perecível").createdAt(Instant.now()).build());
-
-        RagDocument otherDocument = seedDocument(OTHER_EMPRESA_ID, "slug-busca-outra-empresa");
-        mongoTemplate.save(RagChunk.builder().documentId(otherDocument.getId()).chunk(0)
-                .text("controle de estoque perecível").createdAt(Instant.now()).build());
+        RagDocument ownDocument = seedDocument(EMPRESA_ID, "slug-busca-propria", "Controle de Perecíveis", "1.0");
+        seedDocument(OTHER_EMPRESA_ID, "slug-busca-outra-empresa", "Controle de Perecíveis", "1.0");
 
         mockMvc.perform(get("/api/v1/rag/search")
                         .param("empresaId", String.valueOf(EMPRESA_ID))
-                        .param("q", "perecível"))
+                        .param("q", "Perecíveis"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
-                .andExpect(jsonPath("$.content[0].documentId").value(ownDocument.getId()));
+                .andExpect(jsonPath("$.content[0].id").value(ownDocument.getId()));
     }
 }

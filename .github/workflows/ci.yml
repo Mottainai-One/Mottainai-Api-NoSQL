@@ -319,9 +319,10 @@ jobs:
           echo ">>> Contrato de indices OK (app nao cria; seed e a fonte unica)"
 
   # ============================================================
-  # JOB 8: RAG - search retorna chunks + cascata de exclusao
-  # Checklist: "/rag/search continua retornando os chunks esperados" e
-  #            "Cascata de exclusao documento -> chunks continua funcionando"
+  # JOB 8: RAG - search retorna documentos por titulo + cascata de exclusao
+  # Checklist: "/rag/search continua restrito a empresa (indice de texto em
+  #            rag_documents.title)" e "Cascata de exclusao documento -> chunks
+  #            continua funcionando"
   # ============================================================
   rag-contract:
     name: 8. RAG Search e Cascata
@@ -332,16 +333,16 @@ jobs:
       - name: Verificar contrato RAG (search restrito e cascata de exclusao)
         run: |
           set -e
-          echo ">>> RAG: /rag/search retorna chunks da propria empresa; exclusao em cascata"
+          echo ">>> RAG: /rag/search retorna documentos da propria empresa; exclusao em cascata"
 
           rag_service="src/main/java/com/mottainai/mongoapi/service/RagService.java"
 
           # Search restrito aos documentos da empresa
-          if ! grep -qE 'public Page<RagChunkResponse> search' "$rag_service"; then
+          if ! grep -qE 'public Page<RagDocumentResponse> search' "$rag_service"; then
             echo "ERRO: RagService.search ausente"
             exit 1
           fi
-          if ! grep -qE 'findByEmpresaId' "$rag_service"; then
+          if ! grep -qE 'searchByTitleText\(empresaId' "$rag_service"; then
             echo "ERRO: search nao restringe por empresaId (pode vazar dados de outra empresa)"
             exit 1
           fi
@@ -354,8 +355,9 @@ jobs:
 
           # O indice de texto e criado apenas pelo seed (a API nao cria) -> o teste de
           # integracao garante que o search funciona quando o indice de texto existe.
-          if ! grep -qE 'searchByTextInDocuments' "$rag_service"; then
-            echo "ERRO: busca textual (searchByTextInDocuments) ausente"
+          # Vive em rag_documents.title (nao mais em rag_chunks.text).
+          if ! grep -qE 'searchByTitleText' "$rag_service"; then
+            echo "ERRO: busca textual (searchByTitleText) ausente"
             exit 1
           fi
 

@@ -1,5 +1,7 @@
 package com.mottainai.mongoapi.dto.rag;
 
+import java.util.Map;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -20,6 +22,17 @@ public record RagDocumentRequest(
 
         @NotBlank
         @Size(max = 100)
-        String source
+        String source,
+
+        @NotBlank
+        @Size(max = 50)
+        String category,
+
+        /** Compõe, junto de empresaId e title, a chave única atual da coleção rag_documents. */
+        @NotBlank
+        @Size(max = 20)
+        String version,
+
+        Map<String, Object> metadata
 ) {
 }

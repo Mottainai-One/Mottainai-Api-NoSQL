@@ -19,7 +19,8 @@ import lombok.Setter;
 
 @Document(collection = "messages")
 @CompoundIndexes({
-        @CompoundIndex(name = "conversationId_createdAt_idx", def = "{'conversationId': 1, 'createdAt': 1}")
+        @CompoundIndex(name = "ix_messages_conversation_createdAt", def = "{'conversationId': 1, 'createdAt': 1}"),
+        @CompoundIndex(name = "ix_messages_agent_skill_createdAt", def = "{'agent': 1, 'skill': 1, 'createdAt': -1}")
 })
 @Getter
 @Setter

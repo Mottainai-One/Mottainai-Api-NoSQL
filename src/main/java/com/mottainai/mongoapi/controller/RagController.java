@@ -57,15 +57,15 @@ public class RagController {
     }
 
     @PostMapping("/documents")
-    @Operation(summary = "Cria um documento RAG (409 se o slug já existir)")
+    @Operation(summary = "Cria um documento RAG (409 se já existir um documento com o mesmo título e versão)")
     public ResponseEntity<RagDocumentResponse> createDocument(@Valid @RequestBody RagDocumentRequest request) {
         RagDocumentResponse created = ragService.createDocument(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @PutMapping("/documents/{id}")
-    @Operation(summary = "Atualiza título/fonte/slug de um documento RAG. O empresaId do corpo é ignorado; "
-            + "o dono do documento nunca muda após a criação.")
+    @Operation(summary = "Atualiza título/fonte/slug/categoria/versão/metadata de um documento RAG. "
+            + "O empresaId do corpo é ignorado; o dono do documento nunca muda após a criação.")
     public RagDocumentResponse updateDocument(
             @PathVariable String id,
             @RequestParam Long empresaId,
@@ -117,9 +117,9 @@ public class RagController {
     }
 
     @GetMapping("/search")
-    @Operation(summary = "Busca textual em rag_chunks.text, restrita aos documentos da empresa "
-            + "(o filtro de tenant é resolvido antes da busca textual, nunca depois)")
-    public Page<RagChunkResponse> search(
+    @Operation(summary = "Busca textual em rag_documents.title, restrita à empresa informada "
+            + "(o filtro de tenant é aplicado na própria query, nunca depois)")
+    public Page<RagDocumentResponse> search(
             @RequestParam Long empresaId,
             @RequestParam String q,
             @PageableDefault Pageable pageable) {

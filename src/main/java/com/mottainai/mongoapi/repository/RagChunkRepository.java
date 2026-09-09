@@ -8,7 +8,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 
 import com.mottainai.mongoapi.document.RagChunk;
 
-public interface RagChunkRepository extends MongoRepository<RagChunk, String>, RagChunkRepositoryCustom {
+public interface RagChunkRepository extends MongoRepository<RagChunk, String> {
 
     Page<RagChunk> findByDocumentIdOrderByChunkAsc(String documentId, Pageable pageable);
 
