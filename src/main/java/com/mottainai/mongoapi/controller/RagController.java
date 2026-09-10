@@ -36,12 +36,15 @@ public class RagController {
     private final RagService ragService;
 
     @GetMapping("/documents")
-    @Operation(summary = "Lista documentos RAG de uma empresa, com filtro opcional por fonte")
+    @Operation(summary = "Lista documentos RAG de uma empresa, com filtro opcional por categoria "
+            + "(classificação atual da IA Layer) ou por fonte (campo herdado do schema anterior). "
+            + "Quando ambos são informados, category tem precedência.")
     public Page<RagDocumentResponse> listDocuments(
             @RequestParam Long empresaId,
             @RequestParam(required = false) String source,
+            @RequestParam(required = false) String category,
             @PageableDefault(sort = "createdAt") Pageable pageable) {
-        return ragService.listDocuments(empresaId, source, pageable);
+        return ragService.listDocuments(empresaId, source, category, pageable);
     }
 
     @GetMapping("/documents/{id}")

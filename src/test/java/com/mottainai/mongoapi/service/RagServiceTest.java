@@ -8,6 +8,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -68,6 +69,7 @@ class RagServiceTest {
     @Test
     void createDocument_whenTitleAndVersionUnique_savesDocument() {
         RagDocumentRequest request = sampleRequest("novo-slug", EMPRESA_ID, "Título", "manual_operacional", "1.0");
+        when(ragDocumentRepository.findBySlug("novo-slug")).thenReturn(Optional.empty());
         when(ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(EMPRESA_ID, "Título", "1.0"))
                 .thenReturn(Optional.empty());
         when(ragDocumentRepository.save(any(RagDocument.class)))
@@ -81,9 +83,41 @@ class RagServiceTest {
     }
 
     @Test
+    void createDocument_withoutSlug_savesDocumentAndAppliesDefaultVersion() {
+        // Formato que a IA Layer grava hoje: sem slug, sem version explícita, classificado por category.
+        RagDocumentRequest request = new RagDocumentRequest(null, EMPRESA_ID, "FAQ Promoções", null, "FAQ", null, null);
+        when(ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(EMPRESA_ID, "FAQ Promoções", "1.0"))
+                .thenReturn(Optional.empty());
+        when(ragDocumentRepository.save(any(RagDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ArgumentCaptor<RagDocument> captor = ArgumentCaptor.forClass(RagDocument.class);
+        RagDocumentResponse response = ragService.createDocument(request);
+
+        verify(ragDocumentRepository).save(captor.capture());
+        assertThat(captor.getValue().getVersion()).isEqualTo("1.0");
+        assertThat(response.slug()).isNull();
+        assertThat(response.category()).isEqualTo("FAQ");
+        verify(ragDocumentRepository, never()).findBySlug(any());
+    }
+
+    @Test
     void createDocument_whenTitleAndVersionDuplicate_throwsDuplicateDocumentException() {
         RagDocumentRequest request = sampleRequest("existente", EMPRESA_ID, "Título", "manual_operacional", "1.0");
+        when(ragDocumentRepository.findBySlug("existente")).thenReturn(Optional.empty());
         when(ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(EMPRESA_ID, "Título", "1.0"))
+                .thenReturn(Optional.of(sampleDocument("id-1", EMPRESA_ID, "existente")));
+
+        assertThatThrownBy(() -> ragService.createDocument(request))
+                .isInstanceOf(DuplicateDocumentException.class);
+
+        verify(ragDocumentRepository, never()).save(any());
+    }
+
+    @Test
+    void createDocument_whenSlugDuplicate_throwsDuplicateDocumentException() {
+        RagDocumentRequest request = sampleRequest("existente", EMPRESA_ID, "Título", "manual_operacional", "1.0");
+        when(ragDocumentRepository.findBySlug("existente"))
                 .thenReturn(Optional.of(sampleDocument("id-1", EMPRESA_ID, "existente")));
 
         assertThatThrownBy(() -> ragService.createDocument(request))
@@ -134,10 +168,23 @@ class RagServiceTest {
     }
 
     @Test
-    void updateDocument_whenNewTitleVersionUsedByAnotherDocument_throwsDuplicateDocumentException() {
+    void updateDocument_whenNewSlugUsedByAnotherDocument_throwsDuplicateDocumentException() {
         RagDocument document = sampleDocument("id-1", EMPRESA_ID, "slug-atual");
         RagDocument other = sampleDocument("id-2", EMPRESA_ID, "slug-alvo");
         RagDocumentRequest request = sampleRequest("slug-alvo", EMPRESA_ID, "Novo título", "faq", "2.0");
+
+        when(ragDocumentRepository.findByIdAndEmpresaId("id-1", EMPRESA_ID)).thenReturn(Optional.of(document));
+        when(ragDocumentRepository.findBySlug("slug-alvo")).thenReturn(Optional.of(other));
+
+        assertThatThrownBy(() -> ragService.updateDocument("id-1", EMPRESA_ID, request))
+                .isInstanceOf(DuplicateDocumentException.class);
+    }
+
+    @Test
+    void updateDocument_whenNewTitleVersionUsedByAnotherDocument_throwsDuplicateDocumentException() {
+        RagDocument document = sampleDocument("id-1", EMPRESA_ID, "slug-atual");
+        RagDocument other = sampleDocument("id-2", EMPRESA_ID, "slug-alvo");
+        RagDocumentRequest request = sampleRequest(null, EMPRESA_ID, "Novo título", "faq", "2.0");
 
         when(ragDocumentRepository.findByIdAndEmpresaId("id-1", EMPRESA_ID)).thenReturn(Optional.of(document));
         when(ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(EMPRESA_ID, "Novo título", "2.0"))
@@ -148,11 +195,12 @@ class RagServiceTest {
     }
 
     @Test
-    void updateDocument_whenTitleVersionBelongsToItself_updatesNormally() {
+    void updateDocument_whenSlugAndTitleVersionBelongToItself_updatesNormally() {
         RagDocument document = sampleDocument("id-1", EMPRESA_ID, "slug-atual");
         RagDocumentRequest request = sampleRequest("slug-atual", EMPRESA_ID, "Título", "faq", "1.0");
 
         when(ragDocumentRepository.findByIdAndEmpresaId("id-1", EMPRESA_ID)).thenReturn(Optional.of(document));
+        when(ragDocumentRepository.findBySlug("slug-atual")).thenReturn(Optional.of(document));
         when(ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(EMPRESA_ID, "Título", "1.0"))
                 .thenReturn(Optional.of(document));
         when(ragDocumentRepository.save(any(RagDocument.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -226,7 +274,7 @@ class RagServiceTest {
         RagDocument doc = sampleDocument("doc-1", EMPRESA_ID, "slug-1");
         Pageable pageable = PageRequest.of(0, 20);
         when(ragDocumentRepository.searchByTitleText(EMPRESA_ID, "estoque", pageable))
-                .thenReturn(new PageImpl<>(java.util.List.of(doc), pageable, 1));
+                .thenReturn(new PageImpl<>(List.of(doc), pageable, 1));
 
         Page<RagDocumentResponse> result = ragService.search(EMPRESA_ID, "estoque", pageable);
 

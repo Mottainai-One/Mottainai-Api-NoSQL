@@ -37,15 +37,23 @@ public class AgentExecution {
 
     @Field(targetType = FieldType.OBJECT_ID)
     private String conversationId;
+
     private String agent;
     private String skill;
     private String status;
     private Double latency;
     private Map<String, Double> nodeLatenciesMs;
+
+    /** Ferramentas usadas na execução (ex.: "rag_search", "postgres_query"). */
     private List<String> tools;
+
+    /** Sequência de nós percorridos pelo agente (ex.: "Supervisor" -> "Cliente" -> "Resposta"). */
     private List<String> executionFlow;
 
-    /** Documento (ex.: { message: "APIStatusError" }), não string. */
+    /**
+     * A IA Layer passou a gravar o erro como documento estruturado (ex.: {"message": "APIStatusError"}),
+     * e não mais como string — mapear como String devolvia o JSON escapado dentro de uma string.
+     */
     private Map<String, Object> error;
 
     private Instant startedAt;

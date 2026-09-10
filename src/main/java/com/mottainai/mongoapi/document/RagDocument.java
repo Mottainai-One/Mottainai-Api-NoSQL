@@ -32,12 +32,25 @@ public class RagDocument {
     @Id
     private String id;
 
+    /**
+     * Herdado do schema anterior: a IA Layer parou de preencher slug (e removeu seu índice único),
+     * então documentos novos podem não ter esse campo. Mantido para os documentos que já o possuem.
+     */
     private String slug;
+
     private Long empresaId;
     private String title;
+
+    /** Herdado do schema anterior; hoje a IA Layer classifica os documentos por {@link #category}. */
     private String source;
+
+    /** Classificação atual do documento na IA Layer (ex.: "FAQ", "MANUAL"). */
     private String category;
+
+    /** Parte da chave única atual do documento: (empresaId, title, version). */
     private String version;
+
     private Map<String, Object> metadata;
+
     private Instant createdAt;
 }

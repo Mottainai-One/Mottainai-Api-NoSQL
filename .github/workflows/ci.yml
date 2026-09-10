@@ -393,12 +393,24 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             COMMITS=$(git log --oneline ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
           else
-            COMMITS=$(git log --oneline -10)
+            BEFORE="${{ github.event.before }}"
+            AFTER="${{ github.event.after }}"
+            # BEFORE fica all-zeros num push de branch nova; nesse caso valida so o commit atual.
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+              COMMITS=$(git log --oneline "$BEFORE".."$AFTER")
+            else
+              COMMITS=$(git log --oneline -1 "$AFTER")
+            fi
           fi
 
           echo "$COMMITS" | while read -r line; do
             [ -z "$line" ] && continue
             COMMIT_MSG=$(echo "$line" | cut -d' ' -f2-)
+            # Merge commits (gerados pelo botao "Merge pull request" do GitHub) nao
+            # seguem o padrao de commit convencional e nao devem ser bloqueados aqui.
+            case "$COMMIT_MSG" in
+              "Merge "*) continue ;;
+            esac
             if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
               echo "ERRO: Commit nao segue a convencao: $COMMIT_MSG"
               exit 1

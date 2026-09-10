@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -67,5 +69,28 @@ class MetricsControllerIT extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/executions").param("empresaId", String.valueOf(EMPRESA_ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1));
+    }
+
+    @Test
+    void listExecutions_returnsStructuredErrorAndAgentFlowFields() throws Exception {
+        // Formato atual gravado pela IA Layer: error é documento, não string.
+        mongoTemplate.save(AgentExecution.builder().empresaId(EMPRESA_ID).agent("unavailable")
+                .skill("promocoes")
+                .status("error").latency(8.07)
+                .tools(List.of("rag_search", "postgres_query"))
+                .executionFlow(List.of("Supervisor", "Cliente", "Resposta"))
+                .error(Map.of("message", "APIStatusError"))
+                .startedAt(Instant.now()).finishedAt(Instant.now()).createdAt(Instant.now()).build());
+
+        mockMvc.perform(get("/api/v1/executions")
+                        .param("empresaId", String.valueOf(EMPRESA_ID))
+                        .param("status", "error"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].error.message").value("APIStatusError"))
+                .andExpect(jsonPath("$.content[0].skill").value("promocoes"))
+                .andExpect(jsonPath("$.content[0].tools[0]").value("rag_search"))
+                .andExpect(jsonPath("$.content[0].executionFlow[0]").value("Supervisor"))
+                .andExpect(jsonPath("$.content[0].finishedAt").exists());
     }
 }

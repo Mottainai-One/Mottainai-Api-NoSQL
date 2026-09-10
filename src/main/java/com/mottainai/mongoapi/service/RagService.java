@@ -28,10 +28,15 @@ public class RagService {
     private final RagChunkRepository ragChunkRepository;
     private final RagMapper mapper;
 
-    public Page<RagDocumentResponse> listDocuments(Long empresaId, String source, Pageable pageable) {
-        Page<RagDocument> page = (source == null || source.isBlank())
-                ? ragDocumentRepository.findByEmpresaId(empresaId, pageable)
-                : ragDocumentRepository.findByEmpresaIdAndSource(empresaId, source, pageable);
+    public Page<RagDocumentResponse> listDocuments(Long empresaId, String source, String category, Pageable pageable) {
+        Page<RagDocument> page;
+        if (category != null && !category.isBlank()) {
+            page = ragDocumentRepository.findByEmpresaIdAndCategory(empresaId, category, pageable);
+        } else if (source != null && !source.isBlank()) {
+            page = ragDocumentRepository.findByEmpresaIdAndSource(empresaId, source, pageable);
+        } else {
+            page = ragDocumentRepository.findByEmpresaId(empresaId, pageable);
+        }
         return page.map(mapper::toResponse);
     }
 
@@ -47,14 +52,11 @@ public class RagService {
     }
 
     public RagDocumentResponse createDocument(RagDocumentRequest request) {
-        ragDocumentRepository
-                .findByEmpresaIdAndTitleAndVersion(request.empresaId(), request.title(), request.version())
-                .ifPresent(existing -> {
-                    throw new DuplicateDocumentException(
-                            "Já existe um documento com este título e versão: " + request.title() + " v" + request.version());
-                });
+        checkSlugAvailable(request, null);
+        checkTitleVersionAvailable(request, null);
 
         RagDocument document = mapper.toEntity(request);
+        document.setVersion(request.versionOrDefault());
         document.setCreatedAt(Instant.now());
         RagDocument saved = ragDocumentRepository.save(document);
         return mapper.toResponse(saved);
@@ -63,16 +65,36 @@ public class RagService {
     public RagDocumentResponse updateDocument(String id, Long empresaId, RagDocumentRequest request) {
         RagDocument document = findOwnedDocument(id, empresaId);
 
-        ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(empresaId, request.title(), request.version())
-                .filter(existing -> !existing.getId().equals(document.getId()))
-                .ifPresent(existing -> {
-                    throw new DuplicateDocumentException(
-                            "Já existe um documento com este título e versão: " + request.title() + " v" + request.version());
-                });
+        checkSlugAvailable(request, document.getId());
+        checkTitleVersionAvailable(request, document.getId());
 
         mapper.updateEntity(request, document);
+        document.setVersion(request.versionOrDefault());
         RagDocument saved = ragDocumentRepository.save(document);
         return mapper.toResponse(saved);
+    }
+
+    /** O slug deixou de ser obrigatório (a IA Layer não o preenche mais), mas continua único quando informado. */
+    private void checkSlugAvailable(RagDocumentRequest request, String currentDocumentId) {
+        if (request.slug() == null || request.slug().isBlank()) {
+            return;
+        }
+        ragDocumentRepository.findBySlug(request.slug())
+                .filter(existing -> !existing.getId().equals(currentDocumentId))
+                .ifPresent(existing -> {
+                    throw new DuplicateDocumentException("Já existe um documento com o slug: " + request.slug());
+                });
+    }
+
+    /** Reflete o índice único atual da coleção: (empresaId, title, version). */
+    private void checkTitleVersionAvailable(RagDocumentRequest request, String currentDocumentId) {
+        String version = request.versionOrDefault();
+        ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(request.empresaId(), request.title(), version)
+                .filter(existing -> !existing.getId().equals(currentDocumentId))
+                .ifPresent(existing -> {
+                    throw new DuplicateDocumentException(
+                            "Já existe um documento com o título \"" + request.title() + "\" na versão " + version);
+                });
     }
 
     public void deleteDocument(String id, Long empresaId) {

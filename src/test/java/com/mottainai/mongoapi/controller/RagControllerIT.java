@@ -70,18 +70,63 @@ class RagControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void createDocument_withDuplicateTitleAndVersion_returns409() throws Exception {
-        seedDocument(EMPRESA_ID, "slug-existente", "Título Duplicado", "1.0");
+    void createDocument_withDuplicateSlug_returns409() throws Exception {
+        seedDocument(EMPRESA_ID, "slug-existente", "Título A", "1.0");
 
         String body = """
-                {"slug":"outro-slug","empresaId":1,"title":"Título Duplicado",
-                "source":"faq","category":"FAQ","version":"1.0"}
+                {"slug":"slug-existente","empresaId":1,"title":"Outro título","source":"faq","category":"FAQ","version":"1.0"}
                 """;
 
         mockMvc.perform(post("/api/v1/rag/documents")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void createDocument_withoutSlug_succeedsAndReturnsCategoryAndVersion() throws Exception {
+        // Documento no formato que a IA Layer grava hoje: sem slug/source, com category e metadata.
+        String body = """
+                {"empresaId":1,"title":"FAQ Promoções Mottainai","category":"FAQ","metadata":{"audience":"cliente"}}
+                """;
+
+        mockMvc.perform(post("/api/v1/rag/documents")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.slug").doesNotExist())
+                .andExpect(jsonPath("$.category").value("FAQ"))
+                .andExpect(jsonPath("$.version").value("1.0"))
+                .andExpect(jsonPath("$.metadata.audience").value("cliente"));
+    }
+
+    @Test
+    void createDocument_withSameTitleAndVersionForSameEmpresa_returns409() throws Exception {
+        mongoTemplate.save(RagDocument.builder().empresaId(EMPRESA_ID).title("Manual de Estoque")
+                .category("MANUAL").version("1.0").createdAt(Instant.now()).build());
+
+        String body = """
+                {"empresaId":1,"title":"Manual de Estoque","category":"MANUAL","version":"1.0"}
+                """;
+
+        mockMvc.perform(post("/api/v1/rag/documents")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
+    void listDocuments_filteredByCategory_returnsOnlyThatCategory() throws Exception {
+        mongoTemplate.save(RagDocument.builder().empresaId(EMPRESA_ID).title("FAQ A")
+                .category("FAQ").version("1.0").createdAt(Instant.now()).build());
+        mongoTemplate.save(RagDocument.builder().empresaId(EMPRESA_ID).title("Manual A")
+                .category("MANUAL").version("1.0").createdAt(Instant.now()).build());
+
+        mockMvc.perform(get("/api/v1/rag/documents")
+                        .param("empresaId", String.valueOf(EMPRESA_ID))
+                        .param("category", "MANUAL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].title").value("Manual A"));
     }
 
     @Test
