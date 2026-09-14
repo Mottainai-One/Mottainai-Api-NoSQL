@@ -42,8 +42,8 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
-    @ExceptionHandler(DuplicateSlugException.class)
-    public ResponseEntity<ApiErrorResponse> handleDuplicate(DuplicateSlugException ex, WebRequest request) {
+    @ExceptionHandler(DuplicateDocumentException.class)
+    public ResponseEntity<ApiErrorResponse> handleDuplicate(DuplicateDocumentException ex, WebRequest request) {
         return build(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 

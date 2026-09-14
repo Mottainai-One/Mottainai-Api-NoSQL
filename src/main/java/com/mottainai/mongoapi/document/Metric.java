@@ -6,7 +6,6 @@ import java.util.Map;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
@@ -19,7 +18,8 @@ import lombok.Setter;
 
 @Document(collection = "metrics")
 @CompoundIndexes({
-        @CompoundIndex(name = "agent_createdAt_idx", def = "{'agent': 1, 'createdAt': -1}")
+        @CompoundIndex(name = "ix_metrics_conversation_createdAt", def = "{'conversationId': 1, 'createdAt': -1}"),
+        @CompoundIndex(name = "ix_metrics_agent_skill_createdAt", def = "{'agent': 1, 'skill': 1, 'createdAt': -1}")
 })
 @Getter
 @Setter
@@ -48,8 +48,6 @@ public class Metric {
     private String status;
     private Map<String, Double> nodeLatenciesMs;
 
-    @Indexed(name = "createdAt_desc_idx", direction = org.springframework.data.mongodb.core.index.IndexDirection.DESCENDING)
-    @Field("createdAt")
     private Instant createdAt;
 
     @Getter

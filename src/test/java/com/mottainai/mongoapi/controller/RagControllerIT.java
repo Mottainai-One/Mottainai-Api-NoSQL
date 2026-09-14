@@ -19,6 +19,8 @@ import com.mottainai.mongoapi.AbstractIntegrationTest;
 import com.mottainai.mongoapi.document.RagChunk;
 import com.mottainai.mongoapi.document.RagDocument;
 
+import org.springframework.data.mongodb.core.index.TextIndexDefinition;
+
 class RagControllerIT extends AbstractIntegrationTest {
 
     private static final Long EMPRESA_ID = 1L;
@@ -28,9 +30,13 @@ class RagControllerIT extends AbstractIntegrationTest {
     private ObjectMapper objectMapper;
 
     private RagDocument seedDocument(Long empresaId, String slug) {
+        return seedDocument(empresaId, slug, "Política de Estoque", "1.0");
+    }
+
+    private RagDocument seedDocument(Long empresaId, String slug, String title, String version) {
         RagDocument document = RagDocument.builder()
-                .slug(slug).empresaId(empresaId).title("Política de Estoque")
-                .source("manual_operacional").createdAt(Instant.now()).build();
+                .slug(slug).empresaId(empresaId).title(title).version(version)
+                .category("MANUAL").source("manual_operacional").createdAt(Instant.now()).build();
         return mongoTemplate.save(document);
     }
 
@@ -44,28 +50,31 @@ class RagControllerIT extends AbstractIntegrationTest {
     @Test
     void createDocument_thenGetById_success() throws Exception {
         String body = """
-                {"slug":"politica-estoque","empresaId":1,"title":"Política de Estoque","source":"manual_operacional"}
+                {"slug":"politica-estoque","empresaId":1,"title":"Política de Estoque",
+                "source":"manual_operacional","category":"MANUAL","version":"1.0"}
                 """;
 
         String response = mockMvc.perform(post("/api/v1/rag/documents")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.slug").value("politica-estoque"))
+                .andExpect(jsonPath("$.version").value("1.0"))
                 .andReturn().getResponse().getContentAsString();
 
         String id = objectMapper.readTree(response).get("id").asText();
 
         mockMvc.perform(get("/api/v1/rag/documents/{id}", id).param("empresaId", "1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.slug").value("politica-estoque"));
+                .andExpect(jsonPath("$.slug").value("politica-estoque"))
+                .andExpect(jsonPath("$.category").value("MANUAL"));
     }
 
     @Test
     void createDocument_withDuplicateSlug_returns409() throws Exception {
-        seedDocument(EMPRESA_ID, "slug-existente");
+        seedDocument(EMPRESA_ID, "slug-existente", "Título A", "1.0");
 
         String body = """
-                {"slug":"slug-existente","empresaId":1,"title":"Outro título","source":"faq"}
+                {"slug":"slug-existente","empresaId":1,"title":"Outro título","source":"faq","category":"FAQ","version":"1.0"}
                 """;
 
         mockMvc.perform(post("/api/v1/rag/documents")
@@ -165,7 +174,7 @@ class RagControllerIT extends AbstractIntegrationTest {
         RagDocument document = seedDocument(EMPRESA_ID, "slug-embedding");
 
         String body = """
-                {"chunk":0,"text":"texto do chunk","embedding":[0.1,0.2,0.3]}
+                {"chunk":0,"text":"texto do chunk","embedding":[0.1,0.2,0.3],"metadata":{"section":"manual"}}
                 """;
 
         String response = mockMvc.perform(post("/api/v1/rag/documents/{id}/chunks", document.getId())
@@ -173,6 +182,7 @@ class RagControllerIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.embedding").doesNotExist())
+                .andExpect(jsonPath("$.metadata.section").value("manual"))
                 .andReturn().getResponse().getContentAsString();
 
         String chunkId = objectMapper.readTree(response).get("id").asText();
@@ -198,34 +208,19 @@ class RagControllerIT extends AbstractIntegrationTest {
 
     @Test
     void search_isRestrictedToOwnEmpresaDocuments() throws Exception {
-        // Sem criar índice de texto de propósito: a IA Layer removeu o índice de texto de
-        // rag_chunks.text, então a busca precisa funcionar exatamente como em produção — sem ele.
-        RagDocument ownDocument = seedDocument(EMPRESA_ID, "slug-busca-propria");
-        mongoTemplate.save(RagChunk.builder().documentId(ownDocument.getId()).chunk(0)
-                .text("controle de estoque perecível").createdAt(Instant.now()).build());
+        // rag_documents.title só tem índice de texto em produção (criado pelo mongo-seed.js);
+        // a API nunca cria índices, então o teste precisa recriá-lo aqui após o drop do @BeforeEach.
+        mongoTemplate.indexOps(RagDocument.class)
+                .ensureIndex(TextIndexDefinition.builder().onField("title").build());
 
-        RagDocument otherDocument = seedDocument(OTHER_EMPRESA_ID, "slug-busca-outra-empresa");
-        mongoTemplate.save(RagChunk.builder().documentId(otherDocument.getId()).chunk(0)
-                .text("controle de estoque perecível").createdAt(Instant.now()).build());
+        RagDocument ownDocument = seedDocument(EMPRESA_ID, "slug-busca-propria", "Controle de Perecíveis", "1.0");
+        seedDocument(OTHER_EMPRESA_ID, "slug-busca-outra-empresa", "Controle de Perecíveis", "1.0");
 
         mockMvc.perform(get("/api/v1/rag/search")
                         .param("empresaId", String.valueOf(EMPRESA_ID))
-                        .param("q", "perecível"))
+                        .param("q", "Perecíveis"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
-                .andExpect(jsonPath("$.content[0].documentId").value(ownDocument.getId()));
-    }
-
-    @Test
-    void search_withRegexMetacharactersInQuery_treatsThemAsLiteralText() throws Exception {
-        RagDocument document = seedDocument(EMPRESA_ID, "slug-busca-metacaractere");
-        mongoTemplate.save(RagChunk.builder().documentId(document.getId()).chunk(0)
-                .text("desconto de 20% (vinte por cento) em perecíveis").createdAt(Instant.now()).build());
-
-        mockMvc.perform(get("/api/v1/rag/search")
-                        .param("empresaId", String.valueOf(EMPRESA_ID))
-                        .param("q", "(vinte"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content", hasSize(1)));
+                .andExpect(jsonPath("$.content[0].id").value(ownDocument.getId()));
     }
 }

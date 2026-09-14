@@ -19,8 +19,8 @@ import lombok.Setter;
 
 @Document(collection = "agent_executions")
 @CompoundIndexes({
-        @CompoundIndex(name = "empresaId_createdAt_idx", def = "{'empresaId': 1, 'createdAt': -1}"),
-        @CompoundIndex(name = "agent_status_idx", def = "{'agent': 1, 'status': 1}")
+        @CompoundIndex(name = "ix_agent_executions_conversation_startedAt", def = "{'conversationId': 1, 'startedAt': -1}"),
+        @CompoundIndex(name = "ix_agent_executions_agent_status_startedAt", def = "{'agent': 1, 'status': 1, 'startedAt': -1}")
 })
 @Getter
 @Setter

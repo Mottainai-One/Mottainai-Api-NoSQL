@@ -1,7 +1,6 @@
 package com.mottainai.mongoapi.service;
 
 import java.time.Instant;
-import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -13,7 +12,7 @@ import com.mottainai.mongoapi.dto.rag.RagChunkRequest;
 import com.mottainai.mongoapi.dto.rag.RagChunkResponse;
 import com.mottainai.mongoapi.dto.rag.RagDocumentRequest;
 import com.mottainai.mongoapi.dto.rag.RagDocumentResponse;
-import com.mottainai.mongoapi.exception.DuplicateSlugException;
+import com.mottainai.mongoapi.exception.DuplicateDocumentException;
 import com.mottainai.mongoapi.exception.ResourceNotFoundException;
 import com.mottainai.mongoapi.mapper.RagMapper;
 import com.mottainai.mongoapi.repository.RagChunkRepository;
@@ -45,8 +44,9 @@ public class RagService {
         return mapper.toResponse(findOwnedDocument(id, empresaId));
     }
 
+    /** slug pode ter mais de uma versão; devolve a mais recente. */
     public RagDocumentResponse getDocumentBySlug(String slug, Long empresaId) {
-        RagDocument document = ragDocumentRepository.findBySlugAndEmpresaId(slug, empresaId)
+        RagDocument document = ragDocumentRepository.findFirstBySlugAndEmpresaIdOrderByCreatedAtDesc(slug, empresaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Documento não encontrado: " + slug));
         return mapper.toResponse(document);
     }
@@ -82,7 +82,7 @@ public class RagService {
         ragDocumentRepository.findBySlug(request.slug())
                 .filter(existing -> !existing.getId().equals(currentDocumentId))
                 .ifPresent(existing -> {
-                    throw new DuplicateSlugException("Já existe um documento com o slug: " + request.slug());
+                    throw new DuplicateDocumentException("Já existe um documento com o slug: " + request.slug());
                 });
     }
 
@@ -92,7 +92,7 @@ public class RagService {
         ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(request.empresaId(), request.title(), version)
                 .filter(existing -> !existing.getId().equals(currentDocumentId))
                 .ifPresent(existing -> {
-                    throw new DuplicateSlugException(
+                    throw new DuplicateDocumentException(
                             "Já existe um documento com o título \"" + request.title() + "\" na versão " + version);
                 });
     }
@@ -148,11 +148,9 @@ public class RagService {
         ragChunkRepository.delete(chunk);
     }
 
-    public Page<RagChunkResponse> search(Long empresaId, String query, Pageable pageable) {
-        List<String> documentIds = ragDocumentRepository.findByEmpresaId(empresaId).stream()
-                .map(RagDocument::getId)
-                .toList();
-        return ragChunkRepository.searchByTextInDocuments(query, documentIds, pageable).map(mapper::toResponse);
+    /** Busca textual em rag_documents.title (índice de texto), restrita aos documentos da empresa. */
+    public Page<RagDocumentResponse> search(Long empresaId, String query, Pageable pageable) {
+        return ragDocumentRepository.searchByTitleText(empresaId, query, pageable).map(mapper::toResponse);
     }
 
     private RagDocument findOwnedDocument(String id, Long empresaId) {
