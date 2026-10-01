@@ -2,21 +2,22 @@ package com.mottainai.mongoapi.dto.rag;
 
 import java.util.Map;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record RagDocumentRequest(
-        /**
-         * Opcional: a IA Layer parou de preencher slug e removeu seu índice único, então documentos
-         * novos podem não ter um. Quando informado, continua sendo validado e tratado como único.
-         */
+        /** Opcional para manter compatibilidade; o Mongo permite um único slug ausente por empresa. */
         @Size(max = 150)
         @Pattern(regexp = "^[a-z0-9]+(-[a-z0-9]+)*$", message = "deve conter apenas letras minúsculas, números e hífens")
         String slug,
 
         @NotNull
+        @Positive
+        @Max(Integer.MAX_VALUE)
         Long empresaId,
 
         @NotBlank
@@ -27,8 +28,9 @@ public record RagDocumentRequest(
         @Size(max = 100)
         String source,
 
-        /** Classificação atual do documento na IA Layer (ex.: "FAQ", "MANUAL"). */
-        @Size(max = 100)
+        /** Quando omitida, é derivada de source como na IA Layer. */
+        @Pattern(regexp = "MANUAL|FAQ|PROCEDIMENTO|TREINAMENTO|POLITICA",
+                message = "deve ser MANUAL, FAQ, PROCEDIMENTO, TREINAMENTO ou POLITICA")
         String category,
 
         /** Compõe a chave única atual (empresaId, title, version). Assume "1.0" quando omitido. */
@@ -43,5 +45,28 @@ public record RagDocumentRequest(
 
     public String versionOrDefault() {
         return (version == null || version.isBlank()) ? DEFAULT_VERSION : version;
+    }
+
+    public String categoryOrDefault() {
+        if (category != null) {
+            return category;
+        }
+        if (source == null) {
+            return "MANUAL";
+        }
+        String normalized = source.strip().toUpperCase(java.util.Locale.ROOT);
+        if (normalized.startsWith("FAQ")) {
+            return "FAQ";
+        }
+        if (normalized.startsWith("PROCEDIMENTO")) {
+            return "PROCEDIMENTO";
+        }
+        if (normalized.startsWith("TREINAMENTO")) {
+            return "TREINAMENTO";
+        }
+        if (normalized.startsWith("POLITICA")) {
+            return "POLITICA";
+        }
+        return "MANUAL";
     }
 }

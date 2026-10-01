@@ -7,7 +7,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 /**
- * Sem campo "embedding" propositalmente: é calculado pela IA Layer e a API nunca aceita esse valor de entrada,
+ * Sem campo "embedding" propositalmente: é gerado no fluxo de upload da IA Layer e a API nunca aceita esse valor de entrada,
  * mesmo que venha no corpo da requisição (Jackson descarta propriedades desconhecidas por padrão).
  */
 public record RagChunkRequest(

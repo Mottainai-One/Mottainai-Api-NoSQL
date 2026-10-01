@@ -7,6 +7,8 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,7 +19,8 @@ import lombok.Setter;
 @Document(collection = "rag_documents")
 @CompoundIndexes({
         @CompoundIndex(name = "ix_rag_documents_empresa_category_createdAt", def = "{'empresaId': 1, 'category': 1, 'createdAt': -1}"),
-        /** Chave única atual da coleção: (empresaId, title, version). O slug deixou de ser único. */
+        @CompoundIndex(name = "ux_rag_documents_empresa_slug", def = "{'empresaId': 1, 'slug': 1}", unique = true),
+        /** A coleção também exige título e versão únicos por empresa. */
         @CompoundIndex(name = "ux_rag_documents_empresa_title_version", def = "{'empresaId': 1, 'title': 1, 'version': 1}", unique = true),
         /** Índice de texto usado pelo endpoint /rag/search (vive em title, não mais em rag_chunks.text). */
         @CompoundIndex(name = "tx_rag_documents_title", def = "{'title': 'text'}")
@@ -32,12 +35,10 @@ public class RagDocument {
     @Id
     private String id;
 
-    /**
-     * Herdado do schema anterior: a IA Layer parou de preencher slug (e removeu seu índice único),
-     * então documentos novos podem não ter esse campo. Mantido para os documentos que já o possuem.
-     */
+    /** Opcional nos documentos antigos; quando presente, único dentro da empresa. */
     private String slug;
 
+    @Field(targetType = FieldType.INT32)
     private Long empresaId;
     private String title;
 

@@ -3,6 +3,7 @@ package com.mottainai.mongoapi.exception;
 import java.time.Instant;
 import java.util.stream.Collectors;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -45,6 +46,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateDocumentException.class)
     public ResponseEntity<ApiErrorResponse> handleDuplicate(DuplicateDocumentException ex, WebRequest request) {
         return build(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DuplicateKeyException.class)
+    public ResponseEntity<ApiErrorResponse> handleDuplicateKey(DuplicateKeyException ex, WebRequest request) {
+        return build(HttpStatus.CONFLICT, "Já existe um registro com esta chave", request);
     }
 
     @ExceptionHandler(Exception.class)

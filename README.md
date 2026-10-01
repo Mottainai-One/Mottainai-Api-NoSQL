@@ -31,6 +31,16 @@ Para manter a consistência dos dados geridos pela Inteligência Artificial, apl
 | 🧩 `rag_chunks` | CRUD completo |
 | 🧠 `memories` | Leitura e exclusão apenas |
 
+O Mongo da IA também contém coleções internas de configuração, cache e observabilidade
+(`tool_runs`, `prompts`, `feedbacks` e outras). Esta API expõe apenas as coleções
+da tabela acima. O schema completo e seus validadores são mantidos pela IA Layer
+em `scripts/mongo/schema.json` daquele projeto.
+
+Para adicionar conteúdo que deva aparecer na busca semântica da IA, use o upload
+`POST /rag/documents` da IA Layer: ele cria os chunks e seus embeddings. O CRUD
+RAG desta API Java grava chunks sem embeddings; a IA não os inclui na recuperação
+semântica até que sejam processados pela IA Layer.
+
 ---
 
 ## 🛠️ Stack Tecnológica

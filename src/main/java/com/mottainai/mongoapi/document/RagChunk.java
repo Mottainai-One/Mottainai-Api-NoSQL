@@ -34,7 +34,7 @@ public class RagChunk {
     private Integer chunk;
     private String text;
 
-    /** Calculada exclusivamente pela IA Layer; a API nunca aceita nem devolve este campo. */
+    /** Gerado no fluxo de upload da IA Layer; esta API não aceita nem devolve o campo. */
     private List<Double> embedding;
 
     private Map<String, Object> metadata;
