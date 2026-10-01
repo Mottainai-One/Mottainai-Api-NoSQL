@@ -18,11 +18,8 @@ public interface RagDocumentRepository extends MongoRepository<RagDocument, Stri
 
     Optional<RagDocument> findByIdAndEmpresaId(String id, Long empresaId);
 
-    /** slug deixou de ser único (a chave única atual é empresaId+title+version) — devolve a versão mais recente. */
+    /** Índice único (empresaId, slug); a ordenação mantém compatibilidade com chamadas existentes. */
     Optional<RagDocument> findFirstBySlugAndEmpresaIdOrderByCreatedAtDesc(String slug, Long empresaId);
-
-    /** slug é opcional, mas quando informado continua sendo tratado como único (checagem de conflito 409). */
-    Optional<RagDocument> findBySlug(String slug);
 
     /** Usada para a checagem de conflito 409: a chave única atual é (empresaId, title, version). */
     Optional<RagDocument> findByEmpresaIdAndTitleAndVersion(Long empresaId, String title, String version);

@@ -2,13 +2,14 @@
 // Idempotente: não duplica documentos já existentes.
 // Uso: mongosh "mongodb://<user>:<senha>@127.0.0.1:27017/mottainai?authSource=admin" scripts/mongo-seed.js
 //
-// Índices e formato dos documentos espelham o banco real da IA Layer.
-// Sempre que a IA Layer mudar o schema, este arquivo deve ser atualizado junto.
+// Bootstrap demonstrativo das coleções expostas por esta API.
+// O schema completo (validadores e demais coleções) é mantido pela IA Layer
+// em scripts/mongo/schema.json; este seed não o substitui.
 
 const EMPRESA_ID = 1;
 const now = () => new Date();
 
-// ── Índices (nomes e chaves iguais aos da IA Layer) ──────────────
+// ── Índices das coleções usadas pela API ──────────────────────────
 db.conversations.createIndex({ sessionId: 1 }, { name: "ux_conversations_sessionId", unique: true });
 db.conversations.createIndex({ empresaId: 1, usuarioId: 1, startedAt: -1 }, { name: "ix_conversations_empresa_usuario_startedAt" });
 db.conversations.createIndex({ agent: 1, status: 1 }, { name: "ix_conversations_agent_status" });
@@ -26,8 +27,9 @@ db.memories.createIndex({ updatedAt: -1 }, { name: "ix_memories_updatedAt" });
 db.agent_executions.createIndex({ conversationId: 1, startedAt: -1 }, { name: "ix_agent_executions_conversation_startedAt" });
 db.agent_executions.createIndex({ agent: 1, status: 1, startedAt: -1 }, { name: "ix_agent_executions_agent_status_startedAt" });
 
-// A chave única de rag_documents é (empresaId, title, version) — o slug deixou de ser único.
+// O Mongo atual mantém duas chaves únicas por empresa: slug e (title, version).
 db.rag_documents.createIndex({ empresaId: 1, category: 1, createdAt: -1 }, { name: "ix_rag_documents_empresa_category_createdAt" });
+db.rag_documents.createIndex({ empresaId: 1, slug: 1 }, { name: "ux_rag_documents_empresa_slug", unique: true });
 db.rag_documents.createIndex({ empresaId: 1, title: 1, version: 1 }, { name: "ux_rag_documents_empresa_title_version", unique: true });
 // O índice de texto vive em rag_documents.title (não mais em rag_chunks.text).
 db.rag_documents.createIndex({ title: "text" }, { name: "tx_rag_documents_title", default_language: "english" });

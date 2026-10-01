@@ -52,11 +52,12 @@ public class RagService {
     }
 
     public RagDocumentResponse createDocument(RagDocumentRequest request) {
-        checkSlugAvailable(request, null);
-        checkTitleVersionAvailable(request, null);
+        checkSlugAvailable(request, request.empresaId(), null);
+        checkTitleVersionAvailable(request, request.empresaId(), null);
 
         RagDocument document = mapper.toEntity(request);
         document.setVersion(request.versionOrDefault());
+        document.setCategory(request.categoryOrDefault());
         document.setCreatedAt(Instant.now());
         RagDocument saved = ragDocumentRepository.save(document);
         return mapper.toResponse(saved);
@@ -65,31 +66,32 @@ public class RagService {
     public RagDocumentResponse updateDocument(String id, Long empresaId, RagDocumentRequest request) {
         RagDocument document = findOwnedDocument(id, empresaId);
 
-        checkSlugAvailable(request, document.getId());
-        checkTitleVersionAvailable(request, document.getId());
+        checkSlugAvailable(request, empresaId, document.getId());
+        checkTitleVersionAvailable(request, empresaId, document.getId());
 
         mapper.updateEntity(request, document);
         document.setVersion(request.versionOrDefault());
+        document.setCategory(request.categoryOrDefault());
         RagDocument saved = ragDocumentRepository.save(document);
         return mapper.toResponse(saved);
     }
 
-    /** O slug deixou de ser obrigatório (a IA Layer não o preenche mais), mas continua único quando informado. */
-    private void checkSlugAvailable(RagDocumentRequest request, String currentDocumentId) {
-        if (request.slug() == null || request.slug().isBlank()) {
-            return;
-        }
-        ragDocumentRepository.findBySlug(request.slug())
+    /** O índice (empresaId, slug) também limita cada empresa a um documento sem slug. */
+    private void checkSlugAvailable(RagDocumentRequest request, Long empresaId, String currentDocumentId) {
+        ragDocumentRepository.findFirstBySlugAndEmpresaIdOrderByCreatedAtDesc(request.slug(), empresaId)
                 .filter(existing -> !existing.getId().equals(currentDocumentId))
                 .ifPresent(existing -> {
-                    throw new DuplicateDocumentException("Já existe um documento com o slug: " + request.slug());
+                    String detail = request.slug() == null
+                            ? "Já existe um documento sem slug nesta empresa"
+                            : "Já existe um documento com o slug: " + request.slug();
+                    throw new DuplicateDocumentException(detail);
                 });
     }
 
     /** Reflete o índice único atual da coleção: (empresaId, title, version). */
-    private void checkTitleVersionAvailable(RagDocumentRequest request, String currentDocumentId) {
+    private void checkTitleVersionAvailable(RagDocumentRequest request, Long empresaId, String currentDocumentId) {
         String version = request.versionOrDefault();
-        ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(request.empresaId(), request.title(), version)
+        ragDocumentRepository.findByEmpresaIdAndTitleAndVersion(empresaId, request.title(), version)
                 .filter(existing -> !existing.getId().equals(currentDocumentId))
                 .ifPresent(existing -> {
                     throw new DuplicateDocumentException(

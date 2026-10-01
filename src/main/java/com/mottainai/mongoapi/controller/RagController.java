@@ -60,7 +60,8 @@ public class RagController {
     }
 
     @PostMapping("/documents")
-    @Operation(summary = "Cria um documento RAG (409 se já existir um documento com o mesmo título e versão)")
+    @Operation(summary = "Cria um documento RAG (category é derivada de source se omitida; "
+            + "409 se o slug ou o par título/versão já existir na empresa)")
     public ResponseEntity<RagDocumentResponse> createDocument(@Valid @RequestBody RagDocumentRequest request) {
         RagDocumentResponse created = ragService.createDocument(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
@@ -94,7 +95,8 @@ public class RagController {
 
     @PostMapping("/documents/{id}/chunks")
     @Operation(summary = "Cria um chunk. Se 'chunk' não vier, usa max(chunk)+1 do documento. "
-            + "'embedding' nunca é aceito (é calculado pela IA Layer).")
+            + "O embedding é gerado pelo upload da IA Layer; chunks criados aqui não entram "
+            + "na busca semântica até receberem embedding.")
     public ResponseEntity<RagChunkResponse> createChunk(
             @PathVariable String id,
             @RequestParam Long empresaId,

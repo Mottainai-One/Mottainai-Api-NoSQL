@@ -10,6 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 
+import com.mongodb.client.model.CreateCollectionOptions;
+import com.mongodb.client.model.ValidationOptions;
+import org.bson.BsonDocument;
+import org.bson.Document;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -70,6 +74,35 @@ class RagControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void createDocument_respectsLiveMongoValidator() throws Exception {
+        // O Mongo real exige empresaId como BSON int32 e category obrigatória.
+        mongoTemplate.getDb().createCollection("rag_documents", new CreateCollectionOptions()
+                .validationOptions(new ValidationOptions().validator(BsonDocument.parse("""
+                        {"$jsonSchema":{"bsonType":"object",
+                          "required":["empresaId","title","category","version","createdAt"],
+                          "properties":{"empresaId":{"bsonType":"int"},
+                            "category":{"enum":["MANUAL","FAQ","PROCEDIMENTO","TREINAMENTO","POLITICA"]}}}}
+                        """))));
+
+        String body = """
+                {"slug":"faq-validador","empresaId":1,"title":"FAQ Validador","source":"faq_publica"}
+                """;
+        String response = mockMvc.perform(post("/api/v1/rag/documents")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.category").value("FAQ"))
+                .andReturn().getResponse().getContentAsString();
+
+        String id = objectMapper.readTree(response).get("id").asText();
+        Document stored = mongoTemplate.getCollection("rag_documents")
+                .find(new Document("_id", new org.bson.types.ObjectId(id))).first();
+        org.assertj.core.api.Assertions.assertThat(stored).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(stored.get("empresaId")).isInstanceOf(Integer.class);
+        mockMvc.perform(get("/api/v1/rag/documents/{id}", id).param("empresaId", "1"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void createDocument_withDuplicateSlug_returns409() throws Exception {
         seedDocument(EMPRESA_ID, "slug-existente", "Título A", "1.0");
 
@@ -85,7 +118,7 @@ class RagControllerIT extends AbstractIntegrationTest {
 
     @Test
     void createDocument_withoutSlug_succeedsAndReturnsCategoryAndVersion() throws Exception {
-        // Documento no formato que a IA Layer grava hoje: sem slug/source, com category e metadata.
+        // Documento legado sem slug/source, com category e metadata.
         String body = """
                 {"empresaId":1,"title":"FAQ Promoções Mottainai","category":"FAQ","metadata":{"audience":"cliente"}}
                 """;
