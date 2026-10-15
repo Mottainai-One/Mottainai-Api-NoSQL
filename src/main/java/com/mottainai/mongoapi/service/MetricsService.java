@@ -8,6 +8,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.BooleanOperators;
+import org.springframework.data.mongodb.core.aggregation.ComparisonOperators;
 import org.springframework.data.mongodb.core.aggregation.ConditionalOperators;
 import org.springframework.data.mongodb.core.aggregation.GroupOperation;
 import org.springframework.data.mongodb.core.aggregation.MatchOperation;
@@ -49,8 +51,8 @@ public class MetricsService {
      * Agregação nativa do MongoDB, isolada nesta service (repositórios permanecem só com
      * consultas simples/paginadas). judgeScore nulo (execução que falhou antes do Juiz) é
      * ignorado tanto na soma quanto no denominador, pois $avg do Mongo descarta valores não
-     * numéricos automaticamente. errorRate considera "erro" qualquer status diferente de
-     * "completed".
+     * numéricos automaticamente. errorRate inclui falhas e respostas com judgeScore < 0.7,
+     * contando cada execução uma única vez.
      */
     public MetricsSummaryResponse summary(Long empresaId, Instant from, Instant to) {
         Criteria matchCriteria = Criteria.where("empresaId").is(empresaId);
@@ -72,7 +74,10 @@ public class MetricsService {
                 .sum("estimatedCost").as("totalCost")
                 .avg("latency").as("avgLatency")
                 .avg("judgeScore").as("avgJudgeScore")
-                .sum(ConditionalOperators.when(Criteria.where("status").ne(COMPLETED_STATUS)).then(1).otherwise(0))
+                .sum(ConditionalOperators.when(BooleanOperators.Or.or(
+                        ComparisonOperators.Ne.valueOf("status").notEqualToValue(COMPLETED_STATUS),
+                        ComparisonOperators.Lt.valueOf(ConditionalOperators.ifNull("judgeScore").then(1.0))
+                                .lessThanValue(0.7))).then(1).otherwise(0))
                 .as("errorCount");
 
         ProjectionOperation project = Aggregation.project("totalExecutions", "totalCost", "avgLatency", "avgJudgeScore")

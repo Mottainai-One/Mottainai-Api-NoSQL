@@ -54,6 +54,38 @@ class MetricsControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void summary_countsLowJudgeScoresWithoutDoubleCountingFailures() throws Exception {
+        for (double score : new double[] {0.0, 0.69, 0.7, 1.0}) {
+            mongoTemplate.save(Metric.builder().empresaId(EMPRESA_ID).agent("gerente")
+                    .status("completed").judgeScore(score).createdAt(Instant.now()).build());
+        }
+        mongoTemplate.save(Metric.builder().empresaId(EMPRESA_ID).agent("gerente")
+                .status("error").judgeScore(0.2).createdAt(Instant.now()).build());
+        mongoTemplate.save(Metric.builder().empresaId(EMPRESA_ID).agent("gerente")
+                .status("completed").createdAt(Instant.now()).build());
+        mongoTemplate.save(Metric.builder().empresaId(OTHER_EMPRESA_ID).agent("gerente")
+                .status("error").judgeScore(0.0).createdAt(Instant.now()).build());
+
+        mockMvc.perform(get("/api/v1/metrics/summary").param("empresaId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.agents[0].totalExecutions").value(6))
+                .andExpect(jsonPath("$.agents[0].avgLatency").doesNotExist())
+                .andExpect(jsonPath("$.agents[0].errorRate").value(0.5));
+    }
+
+    @Test
+    void listMetrics_readsRequestIdFromCurrentIaDocument() throws Exception {
+        mongoTemplate.getCollection("metrics").insertOne(new org.bson.Document()
+                .append("empresaId", 1).append("sessionId", "session-current")
+                .append("requestId", "request-current").append("agent", "gerente")
+                .append("status", "completed").append("createdAt", java.util.Date.from(Instant.now())));
+
+        mockMvc.perform(get("/api/v1/metrics").param("empresaId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].requestId").value("request-current"));
+    }
+
+    @Test
     void listExecutions_withoutEmpresaId_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/executions"))
                 .andExpect(status().isBadRequest());
@@ -75,6 +107,7 @@ class MetricsControllerIT extends AbstractIntegrationTest {
     void listExecutions_returnsStructuredErrorAndAgentFlowFields() throws Exception {
         // Formato atual gravado pela IA Layer: error é documento, não string.
         mongoTemplate.save(AgentExecution.builder().empresaId(EMPRESA_ID).agent("unavailable")
+                .requestId("request-execution")
                 .skill("promocoes")
                 .status("error").latency(8.07)
                 .tools(List.of("rag_search", "postgres_query"))
@@ -88,6 +121,7 @@ class MetricsControllerIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].error.message").value("APIStatusError"))
+                .andExpect(jsonPath("$.content[0].requestId").value("request-execution"))
                 .andExpect(jsonPath("$.content[0].skill").value("promocoes"))
                 .andExpect(jsonPath("$.content[0].tools[0]").value("rag_search"))
                 .andExpect(jsonPath("$.content[0].executionFlow[0]").value("Supervisor"))

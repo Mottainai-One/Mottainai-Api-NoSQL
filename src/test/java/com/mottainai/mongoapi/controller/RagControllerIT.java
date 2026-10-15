@@ -225,6 +225,35 @@ class RagControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void updateChunk_invalidatesStoredVectorOnlyWhenTextChanges() throws Exception {
+        RagDocument document = seedDocument(EMPRESA_ID, "slug-vector-update");
+        RagChunk chunk = mongoTemplate.save(RagChunk.builder().documentId(document.getId()).chunk(0)
+                .text("original").embedding(java.util.List.of(0.1, 0.2)).createdAt(Instant.now()).build());
+
+        mockMvc.perform(put("/api/v1/rag/chunks/{id}", chunk.getId()).param("empresaId", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"text":"original","metadata":{"section":"FAQ"}}
+                                """))
+                .andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(mongoTemplate.findById(chunk.getId(), RagChunk.class).getEmbedding())
+                .containsExactly(0.1, 0.2);
+
+        mockMvc.perform(put("/api/v1/rag/chunks/{id}", chunk.getId()).param("empresaId", "1")
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"text":"novo conteúdo"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.embedding").doesNotExist());
+        RagChunk stored = mongoTemplate.findById(chunk.getId(), RagChunk.class);
+        org.assertj.core.api.Assertions.assertThat(stored.getText()).isEqualTo("novo conteúdo");
+        org.assertj.core.api.Assertions.assertThat(stored.getEmbedding()).isNull();
+        org.assertj.core.api.Assertions.assertThat(mongoTemplate.getCollection("rag_chunks")
+                .countDocuments(new Document("documentId", new org.bson.types.ObjectId(document.getId()))
+                        .append("embedding", new Document("$ne", null)))).isZero();
+    }
+
+    @Test
     void updateChunk_fromAnotherEmpresa_returns404() throws Exception {
         RagDocument document = seedDocument(EMPRESA_ID, "slug-update-chunk");
         RagChunk chunk = mongoTemplate.save(RagChunk.builder().documentId(document.getId()).chunk(0).text("original").createdAt(Instant.now()).build());

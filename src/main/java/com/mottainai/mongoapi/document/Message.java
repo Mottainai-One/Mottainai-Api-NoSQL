@@ -33,6 +33,7 @@ public class Message {
     private String id;
 
     private Long empresaId;
+    private String requestId;
 
     @Field(targetType = FieldType.OBJECT_ID)
     private String conversationId;

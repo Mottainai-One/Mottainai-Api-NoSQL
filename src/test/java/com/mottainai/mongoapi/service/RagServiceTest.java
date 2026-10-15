@@ -301,6 +301,39 @@ class RagServiceTest {
     }
 
     @Test
+    void updateChunk_whenTextChanges_invalidatesEmbedding() {
+        RagChunk chunk = RagChunk.builder().id("chunk-1").documentId("doc-1")
+                .chunk(0).text("texto antigo").embedding(List.of(0.1, 0.2)).build();
+        when(ragChunkRepository.findById("chunk-1")).thenReturn(Optional.of(chunk));
+        when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID))
+                .thenReturn(Optional.of(sampleDocument("doc-1", EMPRESA_ID, "slug-1")));
+        when(ragChunkRepository.save(any(RagChunk.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ragService.updateChunk("chunk-1", EMPRESA_ID, new RagChunkRequest(null, "novo texto", null));
+
+        assertThat(chunk.getText()).isEqualTo("novo texto");
+        assertThat(chunk.getEmbedding()).isNull();
+        verify(ragChunkRepository).save(chunk);
+    }
+
+    @Test
+    void updateChunk_whenOnlyMetadataOrIndexChanges_preservesEmbedding() {
+        RagChunk chunk = RagChunk.builder().id("chunk-1").documentId("doc-1")
+                .chunk(0).text("mesmo texto").embedding(List.of(0.1, 0.2)).build();
+        when(ragChunkRepository.findById("chunk-1")).thenReturn(Optional.of(chunk));
+        when(ragDocumentRepository.findByIdAndEmpresaId("doc-1", EMPRESA_ID))
+                .thenReturn(Optional.of(sampleDocument("doc-1", EMPRESA_ID, "slug-1")));
+        when(ragChunkRepository.save(any(RagChunk.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ragService.updateChunk("chunk-1", EMPRESA_ID,
+                new RagChunkRequest(2, "mesmo texto", Map.of("section", "FAQ")));
+
+        assertThat(chunk.getEmbedding()).containsExactly(0.1, 0.2);
+        assertThat(chunk.getChunk()).isEqualTo(2);
+        assertThat(chunk.getMetadata()).containsEntry("section", "FAQ");
+    }
+
+    @Test
     void updateChunk_whenNotOwnedByEmpresa_throwsNotFound() {
         RagChunk chunk = RagChunk.builder().id("chunk-1").documentId("doc-1").chunk(0).text("velho").build();
         when(ragChunkRepository.findById("chunk-1")).thenReturn(Optional.of(chunk));

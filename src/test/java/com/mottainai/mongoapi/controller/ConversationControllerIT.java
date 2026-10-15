@@ -47,6 +47,25 @@ class ConversationControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void listMessages_preservesRequestIdAndRagSourcesFromIa() throws Exception {
+        Conversation conversation = mongoTemplate.save(Conversation.builder()
+                .sessionId("session-trace").empresaId(EMPRESA_ID).usuarioId(10L)
+                .agent("cliente").status("active").startedAt(Instant.now()).build());
+        mongoTemplate.getCollection("messages").insertOne(new org.bson.Document()
+                .append("empresaId", 1).append("conversationId", new org.bson.types.ObjectId(conversation.getId()))
+                .append("requestId", "request-message").append("role", "assistant").append("content", "Resposta")
+                .append("sources", java.util.List.of(new org.bson.Document("type", "rag")
+                        .append("ref", "doc:123 chunk:0").append("score", 0.91)))
+                .append("createdAt", java.util.Date.from(Instant.now())));
+
+        mockMvc.perform(get("/api/v1/conversations/session-trace/messages").param("empresaId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].requestId").value("request-message"))
+                .andExpect(jsonPath("$.content[0].sources[0].ref").value("doc:123 chunk:0"))
+                .andExpect(jsonPath("$.content[0].sources[0].score").value(0.91));
+    }
+
+    @Test
     void listMessages_forConversationOfAnotherEmpresa_returns404() throws Exception {
         Conversation conversation = mongoTemplate.save(Conversation.builder()
                 .sessionId("session-3").empresaId(EMPRESA_ID).usuarioId(10L)

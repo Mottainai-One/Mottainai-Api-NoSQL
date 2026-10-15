@@ -34,6 +34,7 @@ public class AgentExecution {
 
     private Long empresaId;
     private String sessionId;
+    private String requestId;
 
     @Field(targetType = FieldType.OBJECT_ID)
     private String conversationId;

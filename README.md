@@ -41,6 +41,20 @@ Para adicionar conteúdo que deva aparecer na busca semântica da IA, use o uplo
 RAG desta API Java grava chunks sem embeddings; a IA não os inclui na recuperação
 semântica até que sejam processados pela IA Layer.
 
+Ao editar o texto de um chunk que já possui embedding, esta API invalida o vetor
+antigo para evitar buscas com uma representação de outro texto. Execute
+`python scripts/generate_embeddings.py` no projeto da IA para recalcular os
+embeddings pendentes. Alterações apenas de número ou metadata preservam o vetor.
+O cache RAG da IA pode manter respostas anteriores até expirar
+(`rag_cache_ttl_seconds`, padrão de 300 segundos).
+
+Mensagens, métricas e execuções expõem o `requestId` gravado pela IA para
+correlacionar uma interação. Registros antigos sem esse campo continuam legíveis.
+No resumo de métricas, `errorRate` é uma proporção de 0 a 1 e considera falhas
+(`status` diferente de `completed`) e notas do Judge abaixo de 0,7, contando cada
+execução uma única vez. Notas ausentes não são tratadas como reprovação.
+Quando nenhum registro do grupo possui latência, `avgLatency` é omitida.
+
 ---
 
 ## 🛠️ Stack Tecnológica

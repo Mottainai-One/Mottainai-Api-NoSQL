@@ -141,7 +141,7 @@ if (!db.conversations.findOne({ sessionId: SESSION_ID })) {
       empresaId: EMPRESA_ID, conversationId: conv.insertedId, role: "assistant",
       content: "Há 3 lotes com vencimento em até 7 dias na loja Centro.",
       agent: "funcionario", skill: null, model: "qwen2.5:7b-instruct",
-      sources: [{ type: "rag", slug: "guia-vencimento-pereciveis" }],
+      sources: [{ type: "rag", ref: "slug:guia-vencimento-pereciveis" }],
       inputTokens: 120, outputTokens: 45, createdAt: now()
     }
   ]);
@@ -150,8 +150,8 @@ if (!db.conversations.findOne({ sessionId: SESSION_ID })) {
     empresaId: EMPRESA_ID, sessionId: SESSION_ID,
     conversationId: conv.insertedId, agent: "funcionario", skill: null,
     model: "qwen2.5:7b-instruct", inputTokens: 120, outputTokens: 45,
-    latency: 1.842, estimatedCost: 0,
-    costReference: { inputPerMillionUsd: 0, outputPerMillionUsd: 0 },
+    latency: 1.842, estimatedCost: Double(0),
+    costReference: { inputPerMillionUsd: Double(0), outputPerMillionUsd: Double(0) },
     judgeScore: 0.91, status: "completed",
     nodeLatenciesMs: { supervisor: 120.5, funcionario: 1500.2, juiz: 221.3 },
     createdAt: now()

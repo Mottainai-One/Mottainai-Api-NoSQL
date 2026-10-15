@@ -1,6 +1,7 @@
 package com.mottainai.mongoapi.service;
 
 import java.time.Instant;
+import java.util.Objects;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -134,6 +135,10 @@ public class RagService {
 
     public RagChunkResponse updateChunk(String id, Long empresaId, RagChunkRequest request) {
         RagChunk chunk = findOwnedChunk(id, empresaId);
+        // O vetor representa o texto anterior; a IA deve recalculá-lo antes de reutilizar o chunk.
+        if (!Objects.equals(chunk.getText(), request.text())) {
+            chunk.setEmbedding(null);
+        }
         chunk.setText(request.text());
         if (request.chunk() != null) {
             chunk.setChunk(request.chunk());
