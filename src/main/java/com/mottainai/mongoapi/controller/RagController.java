@@ -106,7 +106,8 @@ public class RagController {
     }
 
     @PutMapping("/chunks/{id}")
-    @Operation(summary = "Atualiza o texto (e, opcionalmente, o número) de um chunk")
+    @Operation(summary = "Atualiza o texto (e, opcionalmente, o número) de um chunk. "
+            + "Alterar o texto invalida o embedding; a IA Layer precisa recalculá-lo para a busca semântica.")
     public RagChunkResponse updateChunk(
             @PathVariable String id,
             @RequestParam Long empresaId,

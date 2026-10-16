@@ -8,6 +8,7 @@ public record ExecutionResponse(
         String id,
         Long empresaId,
         String sessionId,
+        String requestId,
         String conversationId,
         String agent,
         String skill,

@@ -6,6 +6,7 @@ import java.util.Map;
 
 public record MessageResponse(
         String id,
+        String requestId,
         String conversationId,
         String role,
         String content,
