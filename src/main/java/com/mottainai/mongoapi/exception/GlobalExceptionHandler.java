@@ -53,6 +53,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, "Já existe um registro com esta chave", request);
     }
 
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccessDenied(Exception ex, WebRequest request) {
+        return build(HttpStatus.NOT_FOUND, "Recurso nao encontrado", request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception ex, WebRequest request) {
         log.error("Erro não tratado", ex);
