@@ -9,14 +9,15 @@ public class TenantAuthorization {
     public TenantAuthorization(OperationalMembership membership) { this.membership = membership; }
     public void authorize(Jwt jwt, Long requestedCompany) {
         try {
+            java.util.UUID session = java.util.UUID.fromString(jwt.getClaimAsString("sid"));
             Number user = jwt.getClaim("usuario_id");
             Number company = jwt.getClaim("empresa_id");
             if (jwt.getSubject() == null || jwt.getSubject().isBlank() || user == null || company == null
                     || user.longValue() < 1 || company.longValue() < 1 || requestedCompany == null
                     || company.longValue() != requestedCompany || !"DONO".equals(jwt.getClaimAsString("role"))
                     || !"access".equals(jwt.getClaimAsString("use"))) throw new AccessDeniedException("Access denied");
-            if (!membership.isActiveOwner(jwt.getSubject(), user.longValue(), company.longValue()))
+            if (!membership.isActiveOwner(jwt.getSubject(), user.longValue(), company.longValue(), session))
                 throw new AccessDeniedException("Access denied");
-        } catch (ClassCastException | NullPointerException e) { throw new AccessDeniedException("Access denied"); }
+        } catch (ClassCastException | NullPointerException | IllegalArgumentException e) { throw new AccessDeniedException("Access denied"); }
     }
 }

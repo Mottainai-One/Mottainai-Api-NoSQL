@@ -55,7 +55,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(Exception ex, WebRequest request) {
-        return build(HttpStatus.FORBIDDEN, "Acesso negado", request);
+        return build(HttpStatus.NOT_FOUND, "Recurso nao encontrado", request);
     }
 
     @ExceptionHandler(Exception.class)
