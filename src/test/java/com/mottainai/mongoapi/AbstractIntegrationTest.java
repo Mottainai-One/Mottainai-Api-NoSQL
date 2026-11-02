@@ -11,8 +11,17 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.MongoDBContainer;
 
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 public abstract class AbstractIntegrationTest {
+    // Repository/controller integration tests exercise data behavior. Authentication and
+    // authorization are exercised with the real filters and aspect in SecurityRoutesTest.
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.mottainai.mongoapi.security.TenantAuthorization authorization;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private org.springframework.security.oauth2.jwt.JwtDecoder decoder;
+    @org.junit.jupiter.api.AfterEach
+    void clearSecurity() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
+
 
     private static final String MONGO_IMAGE = "mongo:7.0.14";
 
@@ -41,6 +50,10 @@ public abstract class AbstractIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
+        var jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("integration-test")
+            .header("alg", "HS256").subject("test").build();
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+            .setAuthentication(new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(jwt));
         mongoTemplate.getDb().drop();
     }
 }
